@@ -1,0 +1,594 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YouTube ループ再生ツール</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f5f5f7;
+    --panel: #ffffff;
+    --text: #1d1d1f;
+    --muted: #6e6e73;
+    --accent: #ff0000;
+    --accent-hover: #d60000;
+    --border: #e0e0e0;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #121212;
+      --panel: #1e1e1e;
+      --text: #f0f0f0;
+      --muted: #a0a0a5;
+      --border: #333;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    justify-content: center;
+    padding: 24px 16px 60px;
+  }
+  .wrap {
+    width: 100%;
+    max-width: 880px;
+  }
+  h1 {
+    font-size: 20px;
+    font-weight: 600;
+    margin: 0 0 16px;
+  }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+  .row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  label {
+    font-size: 13px;
+    color: var(--muted);
+    display: block;
+    margin-bottom: 4px;
+  }
+  input[type="text"], input[type="url"] {
+    flex: 1;
+    min-width: 200px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text);
+    font-size: 14px;
+  }
+  button {
+    padding: 10px 16px;
+    border-radius: 8px;
+    border: none;
+    background: var(--accent);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button:hover { background: var(--accent-hover); }
+  button.secondary {
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--border);
+    font-weight: 500;
+  }
+  button.secondary:hover { background: rgba(128,128,128,0.1); }
+  .player-container {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    background: #000;
+    border-radius: 12px;
+    overflow: hidden;
+    margin-bottom: 16px;
+  }
+  #player { width: 100%; height: 100%; }
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  .time-input-group {
+    display: flex;
+    gap: 6px;
+  }
+  .time-input-group input {
+    width: 100%;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text);
+    font-size: 14px;
+  }
+  .time-input-group button {
+    padding: 8px 10px;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+  select {
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--text);
+    font-size: 14px;
+  }
+  .toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+  }
+  .status {
+    font-size: 13px;
+    color: var(--muted);
+    margin-top: 8px;
+  }
+  .section-title {
+    font-size: 14px;
+    font-weight: 600;
+    margin: 0 0 12px;
+  }
+  .hint {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 6px;
+  }
+  .preset-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .preset-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  .preset-info {
+    min-width: 0;
+  }
+  .preset-name {
+    font-size: 14px;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .preset-range {
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .preset-actions {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+  .preset-actions button {
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>YouTube ループ再生ツール</h1>
+
+  <div class="panel">
+    <label for="url-input">YouTube URL または動画ID</label>
+    <div class="row">
+      <input type="text" id="url-input" placeholder="https://www.youtube.com/watch?v=..." />
+      <button id="load-btn">読み込む</button>
+    </div>
+  </div>
+
+  <div class="player-container">
+    <div id="player"></div>
+  </div>
+
+  <div class="panel">
+    <p class="section-title">区間ループ (A-Bリピート)</p>
+    <div class="grid">
+      <div class="field">
+        <label for="start-input">開始位置 (A) — 分:秒</label>
+        <div class="time-input-group">
+          <input type="text" id="start-input" placeholder="0:00" />
+          <button class="secondary" id="set-start-btn">現在地点</button>
+        </div>
+      </div>
+      <div class="field">
+        <label for="end-input">終了位置 (B) — 分:秒</label>
+        <div class="time-input-group">
+          <input type="text" id="end-input" placeholder="0:00" />
+          <button class="secondary" id="set-end-btn">現在地点</button>
+        </div>
+      </div>
+    </div>
+    <div class="row" style="justify-content: space-between;">
+      <div class="toggle-row">
+        <input type="checkbox" id="loop-toggle" checked />
+        <label for="loop-toggle" style="margin:0;">ループを有効にする</label>
+      </div>
+      <button class="secondary" id="reset-range-btn">区間をクリア(動画全体をループ)</button>
+    </div>
+    <p class="hint">Bを未設定のままにすると動画の最後まで、A・B両方未設定なら動画全体をループします。</p>
+  </div>
+
+  <div class="panel">
+    <p class="section-title">再生速度</p>
+    <div class="row">
+      <select id="speed-select">
+        <option value="0.25">0.25倍</option>
+        <option value="0.5">0.5倍</option>
+        <option value="0.75">0.75倍</option>
+        <option value="1" selected>1倍(標準)</option>
+        <option value="1.25">1.25倍</option>
+        <option value="1.5">1.5倍</option>
+        <option value="1.75">1.75倍</option>
+        <option value="2">2倍</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="panel">
+    <p class="section-title">保存済みプリセット</p>
+    <div class="row">
+      <input type="text" id="preset-name-input" placeholder="プリセット名(例: サビ部分)" />
+      <button id="save-preset-btn">現在の設定を保存</button>
+    </div>
+    <div class="preset-list" id="preset-list"></div>
+    <p class="hint" id="preset-empty-hint">保存されたプリセットはありません。</p>
+  </div>
+
+  <div class="status" id="status">動画のURLを入力して「読み込む」を押してください。</div>
+</div>
+
+<script>
+  let player;
+  let loopInterval = null;
+  let apiReady = false;
+  let pendingVideoId = null;
+
+  function extractVideoId(input) {
+    input = input.trim();
+    if (/^[a-zA-Z0-9_-]{11}$/.test(input)) return input;
+    try {
+      const url = new URL(input);
+      if (url.hostname.includes('youtu.be')) {
+        return url.pathname.slice(1);
+      }
+      if (url.hostname.includes('youtube.com')) {
+        if (url.pathname === '/watch') return url.searchParams.get('v');
+        if (url.pathname.startsWith('/embed/')) return url.pathname.split('/embed/')[1];
+        if (url.pathname.startsWith('/shorts/')) return url.pathname.split('/shorts/')[1];
+      }
+    } catch (e) {
+      return null;
+    }
+    return null;
+  }
+
+  function parseTime(str) {
+    str = str.trim();
+    if (str === '') return null;
+    const parts = str.split(':').map(s => s.trim()).filter(s => s !== '');
+    if (parts.some(p => isNaN(Number(p)))) return null;
+    let seconds = 0;
+    for (const p of parts) {
+      seconds = seconds * 60 + Number(p);
+    }
+    return seconds >= 0 ? seconds : null;
+  }
+
+  function formatTime(totalSeconds) {
+    totalSeconds = Math.floor(totalSeconds);
+    const m = Math.floor(totalSeconds / 60);
+    const s = totalSeconds % 60;
+    return `${m}:${String(s).padStart(2, '0')}`;
+  }
+
+  function setStatus(msg) {
+    document.getElementById('status').textContent = msg;
+  }
+
+  const SETTINGS_KEY = 'ytLoopSettings';
+
+  function saveSettings() {
+    try {
+      const settings = {
+        url: document.getElementById('url-input').value,
+        start: document.getElementById('start-input').value,
+        end: document.getElementById('end-input').value,
+        loop: document.getElementById('loop-toggle').checked,
+        speed: document.getElementById('speed-select').value
+      };
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+    } catch (e) {}
+  }
+
+  function loadSettings() {
+    try {
+      const raw = localStorage.getItem(SETTINGS_KEY);
+      if (!raw) return;
+      const settings = JSON.parse(raw);
+      if (settings.url) document.getElementById('url-input').value = settings.url;
+      if (settings.start) document.getElementById('start-input').value = settings.start;
+      if (settings.end) document.getElementById('end-input').value = settings.end;
+      if (typeof settings.loop === 'boolean') document.getElementById('loop-toggle').checked = settings.loop;
+      if (settings.speed) document.getElementById('speed-select').value = settings.speed;
+
+      const videoId = settings.url ? extractVideoId(settings.url) : null;
+      if (videoId) {
+        if (apiReady) {
+          createPlayer(videoId);
+        } else {
+          pendingVideoId = videoId;
+        }
+      }
+    } catch (e) {}
+  }
+
+  const PRESETS_KEY = 'ytLoopPresets';
+
+  function getPresets() {
+    try {
+      const raw = localStorage.getItem(PRESETS_KEY);
+      const list = raw ? JSON.parse(raw) : [];
+      return Array.isArray(list) ? list : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function savePresets(list) {
+    try {
+      localStorage.setItem(PRESETS_KEY, JSON.stringify(list));
+    } catch (e) {}
+  }
+
+  function renderPresetList() {
+    const listEl = document.getElementById('preset-list');
+    const emptyHint = document.getElementById('preset-empty-hint');
+    const presets = getPresets();
+    listEl.innerHTML = '';
+    emptyHint.style.display = presets.length === 0 ? '' : 'none';
+
+    presets.forEach((preset) => {
+      const item = document.createElement('div');
+      item.className = 'preset-item';
+
+      const info = document.createElement('div');
+      info.className = 'preset-info';
+      const nameEl = document.createElement('div');
+      nameEl.className = 'preset-name';
+      nameEl.textContent = preset.name;
+      const rangeEl = document.createElement('div');
+      rangeEl.className = 'preset-range';
+      rangeEl.textContent = `${preset.start || '0:00'} 〜 ${preset.end || '最後まで'}`;
+      info.appendChild(nameEl);
+      info.appendChild(rangeEl);
+
+      const actions = document.createElement('div');
+      actions.className = 'preset-actions';
+      const loadPresetBtn = document.createElement('button');
+      loadPresetBtn.className = 'secondary';
+      loadPresetBtn.textContent = '読み込む';
+      loadPresetBtn.addEventListener('click', () => loadPreset(preset.id));
+      const deleteBtn = document.createElement('button');
+      deleteBtn.className = 'secondary';
+      deleteBtn.textContent = '削除';
+      deleteBtn.addEventListener('click', () => deletePreset(preset.id));
+      actions.appendChild(loadPresetBtn);
+      actions.appendChild(deleteBtn);
+
+      item.appendChild(info);
+      item.appendChild(actions);
+      listEl.appendChild(item);
+    });
+  }
+
+  function addPreset(name) {
+    const presets = getPresets();
+    presets.push({
+      id: Date.now(),
+      name: name,
+      url: document.getElementById('url-input').value,
+      start: document.getElementById('start-input').value,
+      end: document.getElementById('end-input').value,
+      loop: document.getElementById('loop-toggle').checked,
+      speed: document.getElementById('speed-select').value
+    });
+    savePresets(presets);
+    renderPresetList();
+  }
+
+  function deletePreset(id) {
+    const presets = getPresets().filter((p) => p.id !== id);
+    savePresets(presets);
+    renderPresetList();
+  }
+
+  function loadPreset(id) {
+    const preset = getPresets().find((p) => p.id === id);
+    if (!preset) return;
+
+    document.getElementById('url-input').value = preset.url || '';
+    document.getElementById('start-input').value = preset.start || '';
+    document.getElementById('end-input').value = preset.end || '';
+    document.getElementById('loop-toggle').checked = !!preset.loop;
+    document.getElementById('speed-select').value = preset.speed || '1';
+
+    const videoId = preset.url ? extractVideoId(preset.url) : null;
+    if (videoId) {
+      if (apiReady) {
+        createPlayer(videoId);
+      } else {
+        pendingVideoId = videoId;
+      }
+    }
+    saveSettings();
+  }
+
+  // YouTube IFrame API entry point (called automatically by the API script)
+  window.onYouTubeIframeAPIReady = function () {
+    apiReady = true;
+    if (pendingVideoId) {
+      createPlayer(pendingVideoId);
+      pendingVideoId = null;
+    }
+  };
+
+  function createPlayer(videoId) {
+    if (player) {
+      player.loadVideoById(videoId);
+      return;
+    }
+    player = new YT.Player('player', {
+      videoId: videoId,
+      playerVars: { rel: 0, playsinline: 1 },
+      events: {
+        onReady: onPlayerReady,
+        onStateChange: onPlayerStateChange
+      }
+    });
+  }
+
+  function onPlayerReady() {
+    setStatus('動画を読み込みました。再生できます。');
+    applySpeed();
+    startLoopWatcher();
+  }
+
+  function onPlayerStateChange(event) {
+    if (event.data === YT.PlayerState.ENDED) {
+      const loopEnabled = document.getElementById('loop-toggle').checked;
+      if (loopEnabled) {
+        const startSec = parseTime(document.getElementById('start-input').value) || 0;
+        player.seekTo(startSec, true);
+        player.playVideo();
+      }
+    }
+  }
+
+  function startLoopWatcher() {
+    if (loopInterval) clearInterval(loopInterval);
+    loopInterval = setInterval(() => {
+      if (!player || typeof player.getCurrentTime !== 'function') return;
+      const loopEnabled = document.getElementById('loop-toggle').checked;
+      if (!loopEnabled) return;
+      const endSec = parseTime(document.getElementById('end-input').value);
+      if (endSec === null) return;
+      const startSec = parseTime(document.getElementById('start-input').value) || 0;
+      const current = player.getCurrentTime();
+      if (current >= endSec) {
+        player.seekTo(startSec, true);
+      }
+    }, 250);
+  }
+
+  function applySpeed() {
+    const rate = parseFloat(document.getElementById('speed-select').value);
+    if (player && typeof player.setPlaybackRate === 'function') {
+      player.setPlaybackRate(rate);
+    }
+  }
+
+  document.getElementById('load-btn').addEventListener('click', () => {
+    const raw = document.getElementById('url-input').value;
+    const videoId = extractVideoId(raw);
+    if (!videoId) {
+      setStatus('有効なYouTube URLまたは動画IDを入力してください。');
+      return;
+    }
+    if (apiReady) {
+      createPlayer(videoId);
+    } else {
+      pendingVideoId = videoId;
+      setStatus('プレイヤーを準備中です...');
+    }
+    saveSettings();
+  });
+
+  document.getElementById('url-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') document.getElementById('load-btn').click();
+  });
+
+  document.getElementById('set-start-btn').addEventListener('click', () => {
+    if (player && typeof player.getCurrentTime === 'function') {
+      document.getElementById('start-input').value = formatTime(player.getCurrentTime());
+    }
+    saveSettings();
+  });
+
+  document.getElementById('set-end-btn').addEventListener('click', () => {
+    if (player && typeof player.getCurrentTime === 'function') {
+      document.getElementById('end-input').value = formatTime(player.getCurrentTime());
+    }
+    saveSettings();
+  });
+
+  document.getElementById('reset-range-btn').addEventListener('click', () => {
+    document.getElementById('start-input').value = '';
+    document.getElementById('end-input').value = '';
+    saveSettings();
+  });
+
+  document.getElementById('start-input').addEventListener('change', saveSettings);
+  document.getElementById('end-input').addEventListener('change', saveSettings);
+  document.getElementById('loop-toggle').addEventListener('change', saveSettings);
+
+  document.getElementById('speed-select').addEventListener('change', () => {
+    applySpeed();
+    saveSettings();
+  });
+
+  document.getElementById('save-preset-btn').addEventListener('click', () => {
+    const nameInput = document.getElementById('preset-name-input');
+    const name = nameInput.value.trim();
+    if (!name) {
+      setStatus('プリセット名を入力してください。');
+      return;
+    }
+    addPreset(name);
+    nameInput.value = '';
+    setStatus(`プリセット「${name}」を保存しました。`);
+  });
+
+  // Load the YouTube IFrame API script
+  const tag = document.createElement('script');
+  tag.src = 'https://www.youtube.com/iframe_api';
+  document.head.appendChild(tag);
+
+  loadSettings();
+  renderPresetList();
+</script>
+</body>
+</html>

@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PCカメラ映像表示</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f5f5f7;
+    --panel: #ffffff;
+    --text: #1d1d1f;
+    --muted: #6e6e73;
+    --accent: #ff0000;
+    --accent-hover: #d60000;
+    --border: #e0e0e0;
+    --error-bg: #fdecea;
+    --error-text: #b3261e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #121212;
+      --panel: #1e1e1e;
+      --text: #f0f0f0;
+      --muted: #a0a0a5;
+      --border: #333;
+      --error-bg: #3a1f1d;
+      --error-text: #ff8a80;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    justify-content: center;
+    padding: 24px 16px 60px;
+  }
+  .wrap {
+    width: 100%;
+    max-width: 880px;
+  }
+  h1 {
+    font-size: 20px;
+    font-weight: 600;
+    margin: 0 0 16px;
+  }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+  .row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  label {
+    font-size: 13px;
+    color: var(--muted);
+    display: block;
+    margin-bottom: 4px;
+  }
+  button {
+    padding: 10px 16px;
+    border-radius: 8px;
+    border: none;
+    background: var(--accent);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button:hover { background: var(--accent-hover); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  button.secondary {
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--border);
+    font-weight: 500;
+  }
+  button.secondary:hover { background: rgba(128,128,128,0.1); }
+  .player-container {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    background: #000;
+    border-radius: 12px;
+    overflow: hidden;
+    margin-bottom: 16px;
+  }
+  #video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    transform: scaleX(-1);
+  }
+  #video.no-mirror { transform: none; }
+  .placeholder {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #888;
+    font-size: 14px;
+  }
+  .mirror-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    color: var(--text);
+    cursor: pointer;
+  }
+  .mirror-toggle input { cursor: pointer; }
+  .error-box {
+    background: var(--error-bg);
+    color: var(--error-text);
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-size: 13px;
+    margin-top: 12px;
+    display: none;
+  }
+  .error-box.visible { display: block; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>PCカメラ映像表示</h1>
+  <div class="panel">
+    <div class="player-container">
+      <video id="video" autoplay playsinline muted></video>
+      <div id="placeholder" class="placeholder">カメラを開始してください</div>
+    </div>
+    <div class="row">
+      <button id="startBtn">カメラ開始</button>
+      <button id="stopBtn" class="secondary" disabled>停止</button>
+      <label class="mirror-toggle">
+        <input type="checkbox" id="mirrorToggle" checked>
+        左右反転（ミラー表示）
+      </label>
+    </div>
+    <div id="errorBox" class="error-box"></div>
+  </div>
+</div>
+
+<script>
+  const video = document.getElementById('video');
+  const placeholder = document.getElementById('placeholder');
+  const startBtn = document.getElementById('startBtn');
+  const stopBtn = document.getElementById('stopBtn');
+  const mirrorToggle = document.getElementById('mirrorToggle');
+  const errorBox = document.getElementById('errorBox');
+
+  let stream = null;
+
+  function showError(message) {
+    errorBox.textContent = message;
+    errorBox.classList.add('visible');
+  }
+
+  function clearError() {
+    errorBox.textContent = '';
+    errorBox.classList.remove('visible');
+  }
+
+  function applyMirror() {
+    video.classList.toggle('no-mirror', !mirrorToggle.checked);
+  }
+
+  async function startCamera() {
+    clearError();
+
+    if (!window.isSecureContext) {
+      showError('このページは安全なコンテキスト（localhost または HTTPS）で開かれていないため、カメラにアクセスできません。');
+      return;
+    }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      showError('このブラウザはカメラ映像の取得（getUserMedia）に対応していません。');
+      return;
+    }
+
+    startBtn.disabled = true;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      video.srcObject = stream;
+      placeholder.style.display = 'none';
+      stopBtn.disabled = false;
+    } catch (err) {
+      let message = 'カメラへのアクセスに失敗しました: ' + err.message;
+      if (err.name === 'NotAllowedError') {
+        message = 'カメラへのアクセスが許可されていません。ブラウザの権限設定を確認してください。';
+      } else if (err.name === 'NotFoundError') {
+        message = '利用可能なカメラが見つかりませんでした。';
+      }
+      showError(message);
+      startBtn.disabled = false;
+    }
+  }
+
+  function stopCamera() {
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+      stream = null;
+    }
+    video.srcObject = null;
+    placeholder.style.display = 'flex';
+    startBtn.disabled = false;
+    stopBtn.disabled = true;
+  }
+
+  startBtn.addEventListener('click', startCamera);
+  stopBtn.addEventListener('click', stopCamera);
+  mirrorToggle.addEventListener('change', applyMirror);
+
+  applyMirror();
+</script>
+</body>
+</html>
