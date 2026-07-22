@@ -359,6 +359,14 @@
         <button class="secondary" id="reset-range-btn">区間をクリア</button>
       </div>
       <p class="hint">Bを未設定のままにすると動画の最後まで、A・B両方未設定なら動画全体をループします。</p>
+
+      <div class="row" style="margin-top: 14px;">
+        <input type="text" id="preset-name-input" placeholder="プリセット名（例: Aメロ、サビ）" />
+        <button class="secondary" id="save-preset-btn">現在の区間を保存</button>
+      </div>
+      <div class="recording-list" id="preset-list" style="margin-top: 8px;"></div>
+      <p class="hint" id="preset-empty-hint">保存された区間はありません。</p>
+      <p class="hint">YouTube動画の区間はURLごと保存され、読み込む時に自動で動画も読み込まれます。ファイル動画の区間は開始・終了位置だけ保存されるため、同じファイルを選び直してから読み込んでください。</p>
     </div>
 
     <div class="panel" id="panel-reclist">
@@ -702,6 +710,109 @@
   [startInput, endInput, loopToggle, ownLoopToggle].forEach(el => el.addEventListener('change', saveSettings));
   refSpeedSelect.addEventListener('change', () => { refSetRate(parseFloat(refSpeedSelect.value)); saveSettings(); });
 
+  // ---------- loop range presets ----------
+  const presetNameInput = document.getElementById('preset-name-input');
+  const savePresetBtn = document.getElementById('save-preset-btn');
+  const presetList = document.getElementById('preset-list');
+  const presetEmptyHint = document.getElementById('preset-empty-hint');
+
+  const PRESETS_KEY = 'dancePracticePresets';
+  let presets = [];
+
+  function loadPresets() {
+    try {
+      const raw = localStorage.getItem(PRESETS_KEY);
+      presets = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(presets)) presets = [];
+    } catch (e) { presets = []; }
+  }
+  function persistPresets() {
+    try { localStorage.setItem(PRESETS_KEY, JSON.stringify(presets)); } catch (e) {}
+  }
+
+  function addPreset(name) {
+    presets.push({
+      id: Date.now() + Math.random(),
+      name,
+      mode: referenceMode,
+      url: referenceMode === 'youtube' ? ytUrlInput.value : '',
+      start: startInput.value,
+      end: endInput.value
+    });
+    persistPresets();
+    renderPresetList();
+  }
+
+  function deletePreset(id) {
+    presets = presets.filter(p => p.id !== id);
+    persistPresets();
+    renderPresetList();
+  }
+
+  function applyPreset(preset) {
+    startInput.value = preset.start || '';
+    endInput.value = preset.end || '';
+    if (preset.mode === 'youtube' && preset.url) {
+      ytUrlInput.value = preset.url;
+      switchMode('youtube');
+      const videoId = extractVideoId(preset.url);
+      if (videoId) {
+        if (ytApiReady) createYtPlayer(videoId); else pendingYtId = videoId;
+      }
+    } else {
+      switchMode('file');
+      if (!refFileVideo.src) setStatus(`プリセット「${preset.name}」の区間を設定しました。ファイル動画を選び直してください。`);
+    }
+    saveSettings();
+    setStatus(`プリセット「${preset.name}」を読み込みました。`);
+  }
+
+  function renderPresetList() {
+    presetList.innerHTML = '';
+    presetEmptyHint.style.display = presets.length === 0 ? '' : 'none';
+    presets.forEach((preset) => {
+      const el = document.createElement('div');
+      el.className = 'recording-item';
+
+      const info = document.createElement('div');
+      info.className = 'recording-info';
+      const nameEl = document.createElement('div');
+      nameEl.className = 'recording-name';
+      nameEl.textContent = preset.name;
+      const rangeEl = document.createElement('div');
+      rangeEl.className = 'recording-time';
+      const modeLabel = preset.mode === 'youtube' ? 'YouTube' : 'ファイル';
+      rangeEl.textContent = `${preset.start || '0:00'} 〜 ${preset.end || '最後まで'}（${modeLabel}）`;
+      info.appendChild(nameEl);
+      info.appendChild(rangeEl);
+
+      const actions = document.createElement('div');
+      actions.className = 'recording-actions';
+      const loadBtn = document.createElement('button');
+      loadBtn.className = 'secondary';
+      loadBtn.textContent = '読み込む';
+      loadBtn.addEventListener('click', () => applyPreset(preset));
+      const delBtn = document.createElement('button');
+      delBtn.className = 'secondary';
+      delBtn.textContent = '削除';
+      delBtn.addEventListener('click', () => deletePreset(preset.id));
+      actions.appendChild(loadBtn);
+      actions.appendChild(delBtn);
+
+      el.appendChild(info);
+      el.appendChild(actions);
+      presetList.appendChild(el);
+    });
+  }
+
+  savePresetBtn.addEventListener('click', () => {
+    const name = presetNameInput.value.trim();
+    if (!name) { setStatus('プリセット名を入力してください。'); return; }
+    addPreset(name);
+    presetNameInput.value = '';
+    setStatus(`プリセット「${name}」を保存しました。`);
+  });
+
   // ---------- own video slot: mode switching ----------
   function applyMirror() {
     ownVideo.classList.toggle('mirrored', ownMode === 'live' && mirrorToggle.checked);
@@ -1038,6 +1149,8 @@
 
   loadSettings();
   renderRecordingList();
+  loadPresets();
+  renderPresetList();
 })();
 </script>
 </body>
