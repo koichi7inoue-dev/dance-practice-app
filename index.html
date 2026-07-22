@@ -430,11 +430,11 @@
       </div>
       <button class="secondary" id="capture-offset-btn">現在のズレを記憶</button>
     </div>
-    <p class="hint">「両方を先頭に戻す」を押すと、お手本は区間ループの開始位置(A)（未設定なら0:00）に戻り、自分の動画はそこからこの秒数だけずらして揃えます（プラス=自分が遅れて開始／マイナス=自分が早く開始）。両方の動画を手で動きが合う位置まで動かしてから「現在のズレを記憶」を押すと自動入力されます。</p>
+    <p class="hint">「両方を先頭に戻す」を押すと、お手本は区間ループの開始位置(A)（未設定なら0:00）に戻ります。自分の動画は、下の「区間ループを自分の動画にも適用する」がONならA＋この秒数、OFFなら0:00＋この秒数の位置に戻ります（プラス=自分が遅れて開始／マイナス=自分が早く開始）。両方の動画を手で動きが合う位置まで動かしてから「現在のズレを記憶」を押すと自動入力されます。</p>
 
     <div class="toggle-row" style="margin-top: 12px;">
       <input type="checkbox" id="own-loop-toggle" checked />
-      <label for="own-loop-toggle" style="margin:0;">区間ループを自分の動画にも適用する（開始オフセットを考慮）</label>
+      <label for="own-loop-toggle" style="margin:0;">お手本のループが先頭に戻る時、自分の動画も区間の開始位置(A)に揃える（OFFなら自分の0:00＋オフセットに戻る）</label>
     </div>
 
     <p class="hint" style="margin-top: 12px;">キーボード操作: <b>Space</b> = 同時再生/一時停止　<b>←</b>/<b>→</b> = 1コマ戻す/進む　<b>Home</b> = 両方を先頭に戻す（入力欄にフォーカス中は無効）</p>
@@ -684,7 +684,7 @@
     else { refFileVideo.playbackRate = rate; }
   }
 
-  // ---------- A-B loop watcher (works for both file & youtube, and optionally own video) ----------
+  // ---------- A-B loop watcher (works for both file & youtube; own video follows the ref's loop) ----------
   setInterval(() => {
     if (!loopToggle.checked) return;
     const endSec = parseTime(endInput.value);
@@ -692,16 +692,23 @@
     const startSec = parseTime(startInput.value) || 0;
 
     const refHasContent = referenceMode === 'file' ? !!refFileVideo.src : !!ytPlayer;
-    if (refHasContent) {
-      const refPlaying = referenceMode === 'file' ? !refFileVideo.paused : true;
-      if (refPlaying && refGetCurrentTime() >= endSec) refSeek(startSec);
-    }
+    if (!refHasContent) return;
+    const refPlaying = referenceMode === 'file' ? !refFileVideo.paused : true;
+    if (!refPlaying || refGetCurrentTime() < endSec) return;
 
-    if (ownLoopToggle.checked && ownMode === 'playback' && !ownVideo.paused) {
-      const offset = getOffset();
-      const ownStart = Math.max(0, startSec + offset);
-      const ownEnd = endSec + offset;
-      if (ownEnd > ownStart && ownVideo.currentTime >= ownEnd) ownVideo.currentTime = ownStart;
+    try { refSeek(startSec); } catch (e) { console.error(e); }
+    if (ownMode === 'playback') {
+      try {
+        const offset = getOffset();
+        // Same rule as the "両方を先頭に戻す" button: follow the loop start
+        // (A) when the toggle is on, otherwise anchor to the own video's own
+        // 0:00, in both cases shifted by the offset.
+        const ownBaseSec = ownLoopToggle.checked ? startSec : 0;
+        ownVideo.currentTime = Math.max(0, ownBaseSec + offset);
+        // own video may have paused/ended if its content is shorter than the
+        // loop segment; setting currentTime alone won't resume playback.
+        ownVideo.play();
+      } catch (e) { console.error(e); }
     }
   }, 250);
 
@@ -900,6 +907,81 @@
     return '';
   }
 
+  // Chrome's MediaRecorder writes WebM files with the Segment>Info>Duration
+  // field left at 0 (it doesn't know the final length while streaming).
+  // <video> then reports duration as Infinity, and seeking (loop resets,
+  // frame stepping) becomes unreliable. This patches that one field in the
+  // file's bytes once, up front, so normal playback/seeking works from then
+  // on with no runtime workarounds needed.
+  async function fixWebmDuration(blob, durationSeconds) {
+    try {
+      const buffer = await blob.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      const view = new DataView(buffer);
+
+      function vintLength(byte) {
+        for (let i = 0; i < 8; i++) { if (byte & (0x80 >> i)) return i + 1; }
+        return -1;
+      }
+
+      function readHeader(offset) {
+        if (offset >= bytes.length) return null;
+        const idLen = vintLength(bytes[offset]);
+        if (idLen < 0 || offset + idLen > bytes.length) return null;
+        let id = 0;
+        for (let i = 0; i < idLen; i++) id = id * 256 + bytes[offset + i];
+
+        const sizeOffset = offset + idLen;
+        if (sizeOffset >= bytes.length) return null;
+        const sizeLen = vintLength(bytes[sizeOffset]);
+        if (sizeLen < 0 || sizeOffset + sizeLen > bytes.length) return null;
+        const marker = 0x80 >> (sizeLen - 1);
+        let size = bytes[sizeOffset] & (marker - 1);
+        let unknown = size === marker - 1;
+        for (let i = 1; i < sizeLen; i++) {
+          if (bytes[sizeOffset + i] !== 0xFF) unknown = false;
+          size = size * 256 + bytes[sizeOffset + i];
+        }
+        const dataOffset = sizeOffset + sizeLen;
+        return { id, size, unknown, dataOffset, end: dataOffset + size };
+      }
+
+      function findChild(start, end, targetId) {
+        let offset = start;
+        while (offset < end) {
+          const el = readHeader(offset);
+          if (!el) return null;
+          if (el.id === targetId) return el;
+          if (el.unknown) return null; // can't safely skip an unknown-size element
+          offset = el.end;
+        }
+        return null;
+      }
+
+      const SEGMENT_ID = 0x18538067;
+      const INFO_ID = 0x1549A966;
+      const DURATION_ID = 0x4489;
+
+      const segment = findChild(0, bytes.length, SEGMENT_ID);
+      if (!segment) return blob;
+      const segmentEnd = segment.unknown ? bytes.length : segment.end;
+      const info = findChild(segment.dataOffset, segmentEnd, INFO_ID);
+      if (!info) return blob;
+      const infoEnd = info.unknown ? segmentEnd : info.end;
+      const duration = findChild(info.dataOffset, infoEnd, DURATION_ID);
+      if (!duration || (duration.size !== 4 && duration.size !== 8)) return blob;
+
+      // Duration is in "ticks" of TimecodeScale; Chrome defaults to 1ms ticks.
+      const durationTicks = durationSeconds * 1000;
+      if (duration.size === 8) view.setFloat64(duration.dataOffset, durationTicks, false);
+      else view.setFloat32(duration.dataOffset, durationTicks, false);
+
+      return new Blob([bytes], { type: blob.type });
+    } catch (e) {
+      return blob;
+    }
+  }
+
   function startRecording() {
     if (!cameraStream) return;
     if (ownMode !== 'live') showLive();
@@ -915,8 +997,10 @@
       return;
     }
     mediaRecorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) recordedChunks.push(e.data); };
-    mediaRecorder.onstop = () => {
-      const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || 'video/webm' });
+    mediaRecorder.onstop = async () => {
+      const rawBlob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || 'video/webm' });
+      const elapsedSeconds = (Date.now() - recordStartTime) / 1000;
+      const blob = await fixWebmDuration(rawBlob, elapsedSeconds);
       const url = URL.createObjectURL(blob);
       const now = new Date();
       addRecording(`録画 ${now.toLocaleTimeString('ja-JP')}`, url);
@@ -1043,7 +1127,8 @@
   }
 
   ownVideo.addEventListener('loadedmetadata', () => {
-    if (ownMode === 'playback') ownVideo.playbackRate = parseFloat(ownSpeedSelect.value);
+    if (ownMode !== 'playback') return;
+    ownVideo.playbackRate = parseFloat(ownSpeedSelect.value);
   });
   ownSpeedSelect.addEventListener('change', () => {
     if (ownMode === 'playback') ownVideo.playbackRate = parseFloat(ownSpeedSelect.value);
@@ -1058,36 +1143,47 @@
     return isNaN(v) ? 0 : v;
   }
 
+  // Runs ref-side and own-side actions independently so that an error or
+  // unsupported state on one side (e.g. no reference video loaded) can never
+  // block the other side from updating.
+  function safely(fn) {
+    try { fn(); } catch (e) { console.error(e); }
+  }
+
   function syncPlay() {
-    refPlay();
-    if (ownMode === 'playback') ownVideo.play();
+    safely(() => refPlay());
+    safely(() => { if (ownMode === 'playback') ownVideo.play(); });
   }
   function syncPause() {
-    refPause();
-    if (ownMode === 'playback') ownVideo.pause();
+    safely(() => refPause());
+    safely(() => { if (ownMode === 'playback') ownVideo.pause(); });
   }
   function syncReset() {
     const loopStartSec = parseTime(startInput.value) || 0;
     const offset = getOffset();
-    const ownTarget = loopStartSec + offset;
-    if (ownTarget >= 0) {
-      refSeek(loopStartSec);
-      if (ownMode === 'playback') ownVideo.currentTime = ownTarget;
-    } else {
-      refSeek(loopStartSec - ownTarget);
-      if (ownMode === 'playback') ownVideo.currentTime = 0;
-    }
+    // Own video's baseline follows the loop start (A) only when the loop is
+    // also applied to it; otherwise it resets to its own 0:00 + offset.
+    const ownBaseSec = ownLoopToggle.checked ? loopStartSec : 0;
+    const ownTarget = ownBaseSec + offset;
+    const refTarget = ownTarget >= 0 ? loopStartSec : loopStartSec - ownTarget;
+    safely(() => refSeek(refTarget));
+    safely(() => { if (ownMode === 'playback') ownVideo.currentTime = Math.max(0, ownTarget); });
   }
   syncPlayBtn.addEventListener('click', syncPlay);
   syncPauseBtn.addEventListener('click', syncPause);
   syncResetBtn.addEventListener('click', syncReset);
 
   function stepFrame(direction) {
-    refPause();
-    if (ownMode === 'playback') ownVideo.pause();
     const delta = direction * FRAME_STEP;
-    refSeek(Math.max(0, refGetCurrentTime() + delta));
-    if (ownMode === 'playback') ownVideo.currentTime = Math.max(0, ownVideo.currentTime + delta);
+    safely(() => {
+      refPause();
+      refSeek(Math.max(0, refGetCurrentTime() + delta));
+    });
+    safely(() => {
+      if (ownMode !== 'playback') return;
+      ownVideo.pause();
+      ownVideo.currentTime = Math.max(0, ownVideo.currentTime + delta);
+    });
   }
   frameBackBtn.addEventListener('click', () => stepFrame(-1));
   frameForwardBtn.addEventListener('click', () => stepFrame(1));
