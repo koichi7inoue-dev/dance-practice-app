@@ -422,6 +422,13 @@
       <button class="secondary" id="capture-offset-btn">現在のズレを記憶</button>
     </div>
     <p class="hint">「両方を先頭に戻す」を押すと、この秒数だけ自分の動画をずらして揃えます（プラス=自分が遅れて開始／マイナス=自分が早く開始）。両方の動画を手で動きが合う位置まで動かしてから「現在のズレを記憶」を押すと自動入力されます。</p>
+
+    <div class="toggle-row" style="margin-top: 12px;">
+      <input type="checkbox" id="own-loop-toggle" checked />
+      <label for="own-loop-toggle" style="margin:0;">区間ループを自分の動画にも適用する（開始オフセットを考慮）</label>
+    </div>
+
+    <p class="hint" style="margin-top: 12px;">キーボード操作: <b>Space</b> = 同時再生/一時停止　<b>←</b>/<b>→</b> = 1コマ戻す/進む　<b>Home</b> = 両方を先頭に戻す（入力欄にフォーカス中は無効）</p>
   </div>
 
   <div class="status" id="status">お手本動画を読み込み、カメラで自分の動きを録画して比較しましょう。</div>
@@ -495,6 +502,7 @@
   const offsetMinusBtn = document.getElementById('offset-minus-btn');
   const offsetPlusBtn = document.getElementById('offset-plus-btn');
   const captureOffsetBtn = document.getElementById('capture-offset-btn');
+  const ownLoopToggle = document.getElementById('own-loop-toggle');
   const statusEl = document.getElementById('status');
 
   function setStatus(msg) { statusEl.textContent = msg; }
@@ -544,7 +552,8 @@
         refSpeed: refSpeedSelect.value,
         ownSpeed: ownSpeedSelect.value,
         refMirror: refMirrorToggle.checked,
-        offset: offsetInput.value
+        offset: offsetInput.value,
+        ownLoop: ownLoopToggle.checked
       }));
     } catch (e) {}
   }
@@ -562,6 +571,7 @@
       if (typeof s.refMirror === 'boolean') refMirrorToggle.checked = s.refMirror;
       applyRefMirror();
       if (s.offset !== undefined && s.offset !== null && s.offset !== '') offsetInput.value = s.offset;
+      if (typeof s.ownLoop === 'boolean') ownLoopToggle.checked = s.ownLoop;
       if (s.referenceMode === 'youtube') switchMode('youtube');
     } catch (e) {}
   }
@@ -665,22 +675,31 @@
     else { refFileVideo.playbackRate = rate; }
   }
 
-  // ---------- A-B loop watcher (works for both file & youtube) ----------
+  // ---------- A-B loop watcher (works for both file & youtube, and optionally own video) ----------
   setInterval(() => {
     if (!loopToggle.checked) return;
     const endSec = parseTime(endInput.value);
     if (endSec === null) return;
     const startSec = parseTime(startInput.value) || 0;
-    if (referenceMode === 'file' && (!refFileVideo.src || refFileVideo.paused)) return;
-    if (referenceMode === 'youtube' && !ytPlayer) return;
-    const current = refGetCurrentTime();
-    if (current >= endSec) refSeek(startSec);
+
+    const refHasContent = referenceMode === 'file' ? !!refFileVideo.src : !!ytPlayer;
+    if (refHasContent) {
+      const refPlaying = referenceMode === 'file' ? !refFileVideo.paused : true;
+      if (refPlaying && refGetCurrentTime() >= endSec) refSeek(startSec);
+    }
+
+    if (ownLoopToggle.checked && ownMode === 'playback' && !ownVideo.paused) {
+      const offset = getOffset();
+      const ownStart = Math.max(0, startSec + offset);
+      const ownEnd = endSec + offset;
+      if (ownEnd > ownStart && ownVideo.currentTime >= ownEnd) ownVideo.currentTime = ownStart;
+    }
   }, 250);
 
   setStartBtn.addEventListener('click', () => { startInput.value = formatTime(refGetCurrentTime()); saveSettings(); });
   setEndBtn.addEventListener('click', () => { endInput.value = formatTime(refGetCurrentTime()); saveSettings(); });
   resetRangeBtn.addEventListener('click', () => { startInput.value = ''; endInput.value = ''; saveSettings(); });
-  [startInput, endInput, loopToggle].forEach(el => el.addEventListener('change', saveSettings));
+  [startInput, endInput, loopToggle, ownLoopToggle].forEach(el => el.addEventListener('change', saveSettings));
   refSpeedSelect.addEventListener('change', () => { refSetRate(parseFloat(refSpeedSelect.value)); saveSettings(); });
 
   // ---------- own video slot: mode switching ----------
@@ -924,15 +943,15 @@
     return isNaN(v) ? 0 : v;
   }
 
-  syncPlayBtn.addEventListener('click', () => {
+  function syncPlay() {
     refPlay();
     if (ownMode === 'playback') ownVideo.play();
-  });
-  syncPauseBtn.addEventListener('click', () => {
+  }
+  function syncPause() {
     refPause();
     if (ownMode === 'playback') ownVideo.pause();
-  });
-  syncResetBtn.addEventListener('click', () => {
+  }
+  function syncReset() {
     const offset = getOffset();
     if (offset >= 0) {
       refSeek(0);
@@ -941,7 +960,10 @@
       refSeek(-offset);
       if (ownMode === 'playback') ownVideo.currentTime = 0;
     }
-  });
+  }
+  syncPlayBtn.addEventListener('click', syncPlay);
+  syncPauseBtn.addEventListener('click', syncPause);
+  syncResetBtn.addEventListener('click', syncReset);
 
   function stepFrame(direction) {
     refPause();
@@ -952,6 +974,42 @@
   }
   frameBackBtn.addEventListener('click', () => stepFrame(-1));
   frameForwardBtn.addEventListener('click', () => stepFrame(1));
+
+  function isRefPlaying() {
+    if (referenceMode === 'youtube') {
+      return !!ytPlayer && typeof ytPlayer.getPlayerState === 'function' &&
+        ytPlayer.getPlayerState() === YT.PlayerState.PLAYING;
+    }
+    return !refFileVideo.paused && !refFileVideo.ended;
+  }
+
+  function isFormField(el) {
+    if (!el) return false;
+    const tag = el.tagName;
+    return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable;
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (isFormField(e.target)) return;
+    switch (e.code) {
+      case 'Space':
+        e.preventDefault();
+        isRefPlaying() ? syncPause() : syncPlay();
+        break;
+      case 'ArrowLeft':
+        e.preventDefault();
+        stepFrame(-1);
+        break;
+      case 'ArrowRight':
+        e.preventDefault();
+        stepFrame(1);
+        break;
+      case 'Home':
+        e.preventDefault();
+        syncReset();
+        break;
+    }
+  });
 
   function nudgeOffset(delta) {
     offsetInput.value = (getOffset() + delta).toFixed(2);
