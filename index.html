@@ -315,6 +315,7 @@
         <button id="back-to-live-btn" class="secondary hidden">カメラに戻る</button>
       </div>
       <div id="cam-error-box" class="error-box"></div>
+      <p class="hint">「録画開始」を押すと、お手本動画も区間ループの開始位置(A)から自動で同時再生されます。</p>
     </div>
 
     <div class="player-container" id="container-ref">
@@ -902,6 +903,9 @@
   function startRecording() {
     if (!cameraStream) return;
     if (ownMode !== 'live') showLive();
+    const loopStartSec = parseTime(startInput.value) || 0;
+    refSeek(loopStartSec);
+    refPlay();
     recordedChunks = [];
     const mimeType = pickMimeType();
     try {
