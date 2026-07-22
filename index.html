@@ -218,6 +218,10 @@
     color: var(--text);
     font-size: 14px;
   }
+  .time-input-group input[type="number"] {
+    width: 80px;
+    flex: 0 0 auto;
+  }
   .time-input-group button { padding: 8px 10px; font-size: 12px; white-space: nowrap; }
   select {
     padding: 8px 10px;
@@ -420,7 +424,7 @@
     <p class="hint">お手本動画と、録画リストから読み込んだ自分の動画を同時に再生・一時停止できます。コマ送りは約1/30秒単位の目安です。</p>
 
     <div class="row" style="margin-top: 12px; align-items: flex-end;">
-      <div class="field" style="flex: 1; min-width: 220px;">
+      <div class="field">
         <label for="offset-input">自分の動画の開始オフセット（秒）</label>
         <div class="time-input-group">
           <button class="secondary" id="offset-minus-btn">−0.1</button>
