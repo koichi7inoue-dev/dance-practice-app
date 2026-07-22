@@ -404,7 +404,24 @@
       <button id="sync-pause-btn" class="secondary">⏸ 一時停止</button>
       <button id="sync-reset-btn" class="secondary">⏮ 両方を先頭に戻す</button>
     </div>
-    <p class="hint">お手本動画と、録画リストから読み込んだ自分の動画を同時に再生・一時停止できます。</p>
+    <div class="row" style="margin-top: 10px;">
+      <button id="frame-back-btn" class="secondary">◀ 1コマ戻す</button>
+      <button id="frame-forward-btn" class="secondary">1コマ進む ▶</button>
+    </div>
+    <p class="hint">お手本動画と、録画リストから読み込んだ自分の動画を同時に再生・一時停止できます。コマ送りは約1/30秒単位の目安です。</p>
+
+    <div class="row" style="margin-top: 12px; align-items: flex-end;">
+      <div class="field" style="flex: 1; min-width: 220px;">
+        <label for="offset-input">自分の動画の開始オフセット（秒）</label>
+        <div class="time-input-group">
+          <button class="secondary" id="offset-minus-btn">−0.1</button>
+          <input type="number" id="offset-input" step="0.1" value="0" style="text-align:center;" />
+          <button class="secondary" id="offset-plus-btn">+0.1</button>
+        </div>
+      </div>
+      <button class="secondary" id="capture-offset-btn">現在のズレを記憶</button>
+    </div>
+    <p class="hint">「両方を先頭に戻す」を押すと、この秒数だけ自分の動画をずらして揃えます（プラス=自分が遅れて開始／マイナス=自分が早く開始）。両方の動画を手で動きが合う位置まで動かしてから「現在のズレを記憶」を押すと自動入力されます。</p>
   </div>
 
   <div class="status" id="status">お手本動画を読み込み、カメラで自分の動きを録画して比較しましょう。</div>
@@ -472,6 +489,12 @@
   const syncPlayBtn = document.getElementById('sync-play-btn');
   const syncPauseBtn = document.getElementById('sync-pause-btn');
   const syncResetBtn = document.getElementById('sync-reset-btn');
+  const frameBackBtn = document.getElementById('frame-back-btn');
+  const frameForwardBtn = document.getElementById('frame-forward-btn');
+  const offsetInput = document.getElementById('offset-input');
+  const offsetMinusBtn = document.getElementById('offset-minus-btn');
+  const offsetPlusBtn = document.getElementById('offset-plus-btn');
+  const captureOffsetBtn = document.getElementById('capture-offset-btn');
   const statusEl = document.getElementById('status');
 
   function setStatus(msg) { statusEl.textContent = msg; }
@@ -520,7 +543,8 @@
         loop: loopToggle.checked,
         refSpeed: refSpeedSelect.value,
         ownSpeed: ownSpeedSelect.value,
-        refMirror: refMirrorToggle.checked
+        refMirror: refMirrorToggle.checked,
+        offset: offsetInput.value
       }));
     } catch (e) {}
   }
@@ -537,6 +561,7 @@
       if (s.ownSpeed) ownSpeedSelect.value = s.ownSpeed;
       if (typeof s.refMirror === 'boolean') refMirrorToggle.checked = s.refMirror;
       applyRefMirror();
+      if (s.offset !== undefined && s.offset !== null && s.offset !== '') offsetInput.value = s.offset;
       if (s.referenceMode === 'youtube') switchMode('youtube');
     } catch (e) {}
   }
@@ -892,6 +917,13 @@
   });
 
   // ---------- sync controls ----------
+  const FRAME_STEP = 1 / 30; // approximate single-frame duration; not frame-exact
+
+  function getOffset() {
+    const v = parseFloat(offsetInput.value);
+    return isNaN(v) ? 0 : v;
+  }
+
   syncPlayBtn.addEventListener('click', () => {
     refPlay();
     if (ownMode === 'playback') ownVideo.play();
@@ -901,8 +933,44 @@
     if (ownMode === 'playback') ownVideo.pause();
   });
   syncResetBtn.addEventListener('click', () => {
-    refSeek(0);
-    if (ownMode === 'playback') ownVideo.currentTime = 0;
+    const offset = getOffset();
+    if (offset >= 0) {
+      refSeek(0);
+      if (ownMode === 'playback') ownVideo.currentTime = offset;
+    } else {
+      refSeek(-offset);
+      if (ownMode === 'playback') ownVideo.currentTime = 0;
+    }
+  });
+
+  function stepFrame(direction) {
+    refPause();
+    if (ownMode === 'playback') ownVideo.pause();
+    const delta = direction * FRAME_STEP;
+    refSeek(Math.max(0, refGetCurrentTime() + delta));
+    if (ownMode === 'playback') ownVideo.currentTime = Math.max(0, ownVideo.currentTime + delta);
+  }
+  frameBackBtn.addEventListener('click', () => stepFrame(-1));
+  frameForwardBtn.addEventListener('click', () => stepFrame(1));
+
+  function nudgeOffset(delta) {
+    offsetInput.value = (getOffset() + delta).toFixed(2);
+    saveSettings();
+  }
+  offsetMinusBtn.addEventListener('click', () => nudgeOffset(-0.1));
+  offsetPlusBtn.addEventListener('click', () => nudgeOffset(0.1));
+  offsetInput.addEventListener('change', saveSettings);
+
+  captureOffsetBtn.addEventListener('click', () => {
+    if (ownMode !== 'playback') {
+      setStatus('録画リストから自分の動画を読み込んでから使ってください。');
+      return;
+    }
+    const refT = refGetCurrentTime();
+    const ownT = ownVideo.currentTime;
+    offsetInput.value = (ownT - refT).toFixed(2);
+    saveSettings();
+    setStatus(`ズレを ${offsetInput.value} 秒として記憶しました。`);
   });
 
   // ---------- init ----------
