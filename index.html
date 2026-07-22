@@ -430,7 +430,7 @@
       </div>
       <button class="secondary" id="capture-offset-btn">現在のズレを記憶</button>
     </div>
-    <p class="hint">「両方を先頭に戻す」を押すと、この秒数だけ自分の動画をずらして揃えます（プラス=自分が遅れて開始／マイナス=自分が早く開始）。両方の動画を手で動きが合う位置まで動かしてから「現在のズレを記憶」を押すと自動入力されます。</p>
+    <p class="hint">「両方を先頭に戻す」を押すと、お手本は区間ループの開始位置(A)（未設定なら0:00）に戻り、自分の動画はそこからこの秒数だけずらして揃えます（プラス=自分が遅れて開始／マイナス=自分が早く開始）。両方の動画を手で動きが合う位置まで動かしてから「現在のズレを記憶」を押すと自動入力されます。</p>
 
     <div class="toggle-row" style="margin-top: 12px;">
       <input type="checkbox" id="own-loop-toggle" checked />
@@ -1067,12 +1067,14 @@
     if (ownMode === 'playback') ownVideo.pause();
   }
   function syncReset() {
+    const loopStartSec = parseTime(startInput.value) || 0;
     const offset = getOffset();
-    if (offset >= 0) {
-      refSeek(0);
-      if (ownMode === 'playback') ownVideo.currentTime = offset;
+    const ownTarget = loopStartSec + offset;
+    if (ownTarget >= 0) {
+      refSeek(loopStartSec);
+      if (ownMode === 'playback') ownVideo.currentTime = ownTarget;
     } else {
-      refSeek(-offset);
+      refSeek(loopStartSec - ownTarget);
       if (ownMode === 'playback') ownVideo.currentTime = 0;
     }
   }
