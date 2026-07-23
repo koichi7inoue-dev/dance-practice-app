@@ -1,0 +1,1423 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ダンス練習アプリ（比較モード）</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f5f5f7;
+    --panel: #ffffff;
+    --text: #1d1d1f;
+    --muted: #6e6e73;
+    --accent: #ff0000;
+    --accent-hover: #d60000;
+    --border: #e0e0e0;
+    --error-bg: #fdecea;
+    --error-text: #b3261e;
+    --rec-bg: rgba(0, 0, 0, 0.6);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #121212;
+      --panel: #1e1e1e;
+      --text: #f0f0f0;
+      --muted: #a0a0a5;
+      --border: #333;
+      --error-bg: #3a1f1d;
+      --error-text: #ff8a80;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    justify-content: center;
+    padding: 24px 16px 60px;
+  }
+  .wrap {
+    width: 100%;
+    max-width: 1200px;
+  }
+  h1 {
+    font-size: 22px;
+    font-weight: 600;
+    margin: 0 0 16px;
+  }
+  .columns {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    align-items: start;
+  }
+  @media (max-width: 860px) {
+    .columns { grid-template-columns: 1fr; }
+    /* stack each side as a full group instead of interleaving rows */
+    #title-left { order: 1; }
+    #panel-source { order: 2; }
+    #panel-ab { order: 3; }
+    #panel-refspeed { order: 4; }
+    #title-right { order: 5; }
+    #panel-camera { order: 6; }
+    #panel-reclist { order: 7; }
+    #panel-ownspeed { order: 8; }
+  }
+  .column-title {
+    font-size: 16px;
+    font-weight: 700;
+    margin: 0 0 10px;
+  }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+  .row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  label { font-size: 13px; color: var(--muted); display: block; margin-bottom: 4px; }
+  input[type="text"], input[type="url"] {
+    flex: 1;
+    min-width: 160px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text);
+    font-size: 14px;
+  }
+  input[type="file"] { font-size: 13px; color: var(--text); }
+  button {
+    padding: 10px 16px;
+    border-radius: 8px;
+    border: none;
+    background: var(--accent);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button:hover { background: var(--accent-hover); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  button.secondary {
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--border);
+    font-weight: 500;
+  }
+  button.secondary:hover { background: rgba(128,128,128,0.1); }
+  button.recording { background: #444; }
+  .upload-label {
+    display: inline-flex;
+    align-items: center;
+    padding: 10px 16px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    color: var(--text);
+  }
+  .upload-label:hover { background: rgba(128,128,128,0.1); }
+  .visually-hidden {
+    position: absolute;
+    width: 1px; height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  .hidden { display: none !important; }
+  .tab-row { display: flex; gap: 4px; margin-bottom: 12px; }
+  .tab-btn {
+    background: transparent;
+    color: var(--muted);
+    border: 1px solid var(--border);
+    font-weight: 500;
+    padding: 8px 14px;
+  }
+  .tab-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .source-block.hidden { display: none; }
+  .video-stage {
+    position: relative;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 4px;
+  }
+  @media (max-width: 860px) {
+    .video-stage { grid-template-columns: 1fr; }
+  }
+  .video-stage.overlay-mode, .video-stage.swipe-mode { grid-template-columns: 1fr; }
+  .video-stage.overlay-mode .player-container, .video-stage.swipe-mode .player-container { grid-area: 1 / 1; }
+  .compare-mode-row { margin-bottom: 12px; }
+  .overlay-opacity-row, .swipe-split-row { align-items: center; margin-top: 8px; }
+  .overlay-opacity-row.hidden, .swipe-split-row.hidden { display: none; }
+  .overlay-opacity-row input[type="range"], .swipe-split-row input[type="range"] { flex: 1; min-width: 160px; }
+  .overlay-opacity-row .opacity-value, .swipe-split-row .split-value { font-size: 13px; color: var(--muted); min-width: 42px; text-align: right; }
+  .swipe-divider {
+    position: absolute;
+    top: 0;
+    bottom: 16px;
+    width: 2px;
+    background: var(--accent);
+    left: 50%;
+    transform: translateX(-50%);
+    pointer-events: none;
+    display: none;
+    z-index: 2;
+  }
+  .video-stage.swipe-mode .swipe-divider { display: block; }
+  .grid-overlay {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    display: none;
+    background-image:
+      repeating-linear-gradient(to right, rgba(255,255,255,0.5) 0, rgba(255,255,255,0.5) 1px, transparent 1px, transparent 33.333%),
+      repeating-linear-gradient(to bottom, rgba(255,255,255,0.5) 0, rgba(255,255,255,0.5) 1px, transparent 1px, transparent 33.333%),
+      linear-gradient(rgba(255,80,80,0.8), rgba(255,80,80,0.8)),
+      linear-gradient(rgba(255,80,80,0.8), rgba(255,80,80,0.8));
+    background-size: 100% 100%, 100% 100%, 1px 100%, 100% 1px;
+    background-position: 0 0, 0 0, center, center;
+    background-repeat: no-repeat;
+    z-index: 1;
+  }
+  .grid-overlay.visible { display: block; }
+  .player-container {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    background: #000;
+    border-radius: 12px;
+    overflow: hidden;
+    margin-bottom: 16px;
+  }
+  .ref-video-wrapper { position: absolute; inset: 0; }
+  .ref-video-wrapper.hidden { display: none; }
+  .ref-video-wrapper.mirrored { transform: scaleX(-1); }
+  #ref-file-video, #yt-player, #own-video { width: 100%; height: 100%; }
+  #ref-file-video, #own-video { object-fit: contain; }
+  #own-video.mirrored { transform: scaleX(-1); }
+  .placeholder {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #888;
+    font-size: 14px;
+    text-align: center;
+    padding: 12px;
+    pointer-events: none;
+  }
+  .placeholder.hidden { display: none; }
+  .rec-indicator {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    background: var(--rec-bg);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 5px 10px;
+    border-radius: 999px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    letter-spacing: 0.5px;
+  }
+  .rec-indicator.hidden { display: none; }
+  .rec-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #ff3b30;
+    animation: blink 1s infinite;
+  }
+  @keyframes blink { 50% { opacity: 0.2; } }
+  .mirror-toggle { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text); cursor: pointer; }
+  .mirror-toggle input { cursor: pointer; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .time-input-group { display: flex; gap: 6px; }
+  .time-input-group input {
+    width: 100%;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text);
+    font-size: 14px;
+  }
+  .time-input-group input[type="number"] {
+    width: 80px;
+    flex: 0 0 auto;
+  }
+  .time-input-group button { padding: 8px 10px; font-size: 12px; white-space: nowrap; }
+  select {
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--text);
+    font-size: 14px;
+  }
+  .toggle-row { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+  .section-title { font-size: 14px; font-weight: 600; margin: 0 0 12px; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .error-box {
+    background: var(--error-bg);
+    color: var(--error-text);
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-size: 13px;
+    margin-top: 12px;
+    display: none;
+  }
+  .error-box.visible { display: block; }
+  .recording-list { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+  .recording-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  .recording-item.active { border-color: var(--accent); }
+  .recording-info { min-width: 0; }
+  .recording-name { font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .recording-time { font-size: 12px; color: var(--muted); }
+  .recording-actions { display: flex; gap: 6px; flex-shrink: 0; }
+  .recording-actions button, .recording-actions a {
+    padding: 6px 10px;
+    font-size: 12px;
+    border-radius: 8px;
+    text-decoration: none;
+  }
+  .sync-panel { text-align: left; }
+  .status { font-size: 13px; color: var(--muted); margin-top: 8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>ダンス練習アプリ（比較モード）</h1>
+
+  <div class="panel" id="panel-compare-mode">
+    <p class="section-title">表示モード</p>
+    <div class="tab-row compare-mode-row">
+      <button class="tab-btn active" id="mode-sidebyside-btn" data-mode="side">並べて表示</button>
+      <button class="tab-btn" id="mode-overlay-btn" data-mode="overlay">重ねて表示（オーバーレイ）</button>
+      <button class="tab-btn" id="mode-swipe-btn" data-mode="swipe">スワイプ分割表示</button>
+    </div>
+    <div class="row overlay-opacity-row hidden" id="overlay-opacity-row">
+      <label for="overlay-opacity-input" style="margin:0;">自分の動画の透明度</label>
+      <input type="range" id="overlay-opacity-input" min="0" max="100" value="50" />
+      <span class="opacity-value" id="overlay-opacity-value">50%</span>
+    </div>
+    <div class="row swipe-split-row hidden" id="swipe-split-row">
+      <label for="swipe-split-input" style="margin:0;">分割位置</label>
+      <input type="range" id="swipe-split-input" min="0" max="100" value="50" />
+      <span class="split-value" id="swipe-split-value">50%</span>
+    </div>
+    <p class="hint">重ねて表示では、お手本動画の上に自分の動画を半透明で重ねます。スワイプ分割表示では、境界線の左にお手本、右に自分の動画を表示します。左右の向きが合うように、必要に応じてそれぞれのミラー表示を調整してください。</p>
+    <div class="toggle-row" style="margin-top: 10px;">
+      <input type="checkbox" id="grid-overlay-toggle" />
+      <label for="grid-overlay-toggle" style="margin:0;">位置合わせ用グリッド線を表示</label>
+    </div>
+  </div>
+
+  <div class="video-stage" id="video-stage">
+    <div class="swipe-divider" id="swipe-divider"></div>
+    <div class="player-container" id="container-ref">
+      <div class="grid-overlay" id="grid-overlay-ref"></div>
+      <div id="file-video-wrapper" class="ref-video-wrapper">
+        <video id="ref-file-video" playsinline controls></video>
+      </div>
+      <div id="yt-video-wrapper" class="ref-video-wrapper hidden">
+        <div id="yt-player"></div>
+      </div>
+      <div id="ref-placeholder" class="placeholder">お手本動画を読み込んでください</div>
+    </div>
+
+    <div class="player-container" id="container-own">
+      <div class="grid-overlay" id="grid-overlay-own"></div>
+      <video id="own-video" playsinline></video>
+      <div id="own-placeholder" class="placeholder">カメラを開始するか、録画リストから読み込んでください</div>
+      <div id="rec-indicator" class="rec-indicator hidden"><span class="rec-dot"></span>REC <span id="rec-timer">0:00</span></div>
+    </div>
+  </div>
+
+  <div class="columns">
+    <p class="column-title" id="title-left">お手本動画</p>
+    <p class="column-title" id="title-right">自分の動き</p>
+
+    <div class="panel" id="panel-source">
+      <div class="tab-row">
+        <button class="tab-btn active" id="tab-file-btn" data-mode="file">ファイル</button>
+        <button class="tab-btn" id="tab-youtube-btn" data-mode="youtube">YouTube</button>
+      </div>
+      <div id="file-source" class="source-block">
+        <label for="ref-file-input">動画ファイルを選択</label>
+        <input type="file" id="ref-file-input" accept="video/*" />
+      </div>
+      <div id="youtube-source" class="source-block hidden">
+        <label for="yt-url-input">YouTube URL または動画ID</label>
+        <div class="row">
+          <input type="text" id="yt-url-input" placeholder="https://www.youtube.com/watch?v=..." />
+          <button id="yt-load-btn">読み込む</button>
+        </div>
+      </div>
+      <div class="row" style="margin-top: 12px;">
+        <label class="mirror-toggle">
+          <input type="checkbox" id="ref-mirror-toggle">
+          ミラー表示（左右反転）
+        </label>
+      </div>
+    </div>
+
+    <div class="panel" id="panel-camera">
+      <div class="row">
+        <button id="cam-start-btn">カメラ開始</button>
+        <button id="cam-stop-btn" class="secondary" disabled>カメラ停止</button>
+        <label class="mirror-toggle">
+          <input type="checkbox" id="mirror-toggle" checked>
+          ミラー表示
+        </label>
+      </div>
+      <div class="row">
+        <button id="record-btn" disabled>録画開始</button>
+        <label class="upload-label">
+          動画をアップロード
+          <input type="file" id="own-file-input" accept="video/*" class="visually-hidden" />
+        </label>
+        <button id="back-to-live-btn" class="secondary hidden">カメラに戻る</button>
+      </div>
+      <div id="cam-error-box" class="error-box"></div>
+      <p class="hint">「録画開始」を押すと、お手本動画も区間ループの開始位置(A)から自動で同時再生されます。</p>
+    </div>
+
+    <div class="panel" id="panel-ab">
+      <p class="section-title">区間ループ (A-Bリピート)</p>
+      <div class="grid">
+        <div class="field">
+          <label for="start-input">開始位置 (A) — 分:秒</label>
+          <div class="time-input-group">
+            <input type="text" id="start-input" placeholder="0:00" />
+            <button class="secondary" id="set-start-btn">現在地点</button>
+          </div>
+        </div>
+        <div class="field">
+          <label for="end-input">終了位置 (B) — 分:秒</label>
+          <div class="time-input-group">
+            <input type="text" id="end-input" placeholder="0:00" />
+            <button class="secondary" id="set-end-btn">現在地点</button>
+          </div>
+        </div>
+      </div>
+      <div class="row" style="justify-content: space-between;">
+        <div class="toggle-row">
+          <input type="checkbox" id="loop-toggle" checked />
+          <label for="loop-toggle" style="margin:0;">ループを有効にする</label>
+        </div>
+        <button class="secondary" id="reset-range-btn">区間をクリア</button>
+      </div>
+      <p class="hint">Bを未設定のままにすると動画の最後まで、A・B両方未設定なら動画全体をループします。</p>
+
+      <div class="row" style="margin-top: 14px;">
+        <input type="text" id="preset-name-input" placeholder="プリセット名（例: Aメロ、サビ）" />
+        <button class="secondary" id="save-preset-btn">現在の区間を保存</button>
+      </div>
+      <div class="recording-list" id="preset-list" style="margin-top: 8px;"></div>
+      <p class="hint" id="preset-empty-hint">保存された区間はありません。</p>
+      <p class="hint">YouTube動画の区間はURLごと保存され、読み込む時に自動で動画も読み込まれます。ファイル動画の区間は開始・終了位置だけ保存されるため、同じファイルを選び直してから読み込んでください。</p>
+    </div>
+
+    <div class="panel" id="panel-reclist">
+      <p class="section-title">録画リスト</p>
+      <div class="recording-list" id="recording-list"></div>
+      <p class="hint" id="recording-empty-hint">録画・アップロードした動画はまだありません。</p>
+      <p class="hint">※このタブを閉じると録画データは消えます。残したい場合はダウンロードしてください。</p>
+    </div>
+
+    <div class="panel" id="panel-refspeed">
+      <p class="section-title">再生速度</p>
+      <select id="ref-speed-select">
+        <option value="0.25">0.25倍</option>
+        <option value="0.5">0.5倍</option>
+        <option value="0.75">0.75倍</option>
+        <option value="1" selected>1倍(標準)</option>
+        <option value="1.25">1.25倍</option>
+        <option value="1.5">1.5倍</option>
+        <option value="1.75">1.75倍</option>
+        <option value="2">2倍</option>
+      </select>
+    </div>
+
+    <div class="panel" id="panel-ownspeed">
+      <p class="section-title">再生速度</p>
+      <select id="own-speed-select">
+        <option value="0.25">0.25倍</option>
+        <option value="0.5">0.5倍</option>
+        <option value="0.75">0.75倍</option>
+        <option value="1" selected>1倍(標準)</option>
+        <option value="1.25">1.25倍</option>
+        <option value="1.5">1.5倍</option>
+        <option value="1.75">1.75倍</option>
+        <option value="2">2倍</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="panel sync-panel">
+    <p class="section-title">同時再生コントロール</p>
+    <div class="row">
+      <button id="sync-play-btn">▶ 同時再生</button>
+      <button id="sync-pause-btn" class="secondary">⏸ 一時停止</button>
+      <button id="sync-reset-btn" class="secondary">⏮ 両方を先頭に戻す</button>
+    </div>
+    <div class="row" style="margin-top: 10px;">
+      <button id="frame-back-btn" class="secondary">◀ 1コマ戻す</button>
+      <button id="frame-forward-btn" class="secondary">1コマ進む ▶</button>
+    </div>
+    <p class="hint">お手本動画と、録画リストから読み込んだ自分の動画を同時に再生・一時停止できます。コマ送りは約1/30秒単位の目安です。</p>
+
+    <div class="row" style="margin-top: 12px; align-items: flex-end;">
+      <div class="field">
+        <label for="offset-input">自分の動画の開始オフセット（秒）</label>
+        <div class="time-input-group">
+          <button class="secondary" id="offset-minus-btn">−0.1</button>
+          <input type="number" id="offset-input" step="0.1" value="0" style="text-align:center;" />
+          <button class="secondary" id="offset-plus-btn">+0.1</button>
+        </div>
+      </div>
+      <button class="secondary" id="capture-offset-btn">現在のズレを記憶</button>
+    </div>
+    <p class="hint">「両方を先頭に戻す」を押すと、お手本は区間ループの開始位置(A)（未設定なら0:00）に戻ります。自分の動画は、下の「区間ループを自分の動画にも適用する」がONならA＋この秒数、OFFなら0:00＋この秒数の位置に戻ります（プラス=自分が遅れて開始／マイナス=自分が早く開始）。両方の動画を手で動きが合う位置まで動かしてから「現在のズレを記憶」を押すと自動入力されます。</p>
+
+    <div class="toggle-row" style="margin-top: 12px;">
+      <input type="checkbox" id="own-loop-toggle" checked />
+      <label for="own-loop-toggle" style="margin:0;">お手本のループが先頭に戻る時、自分の動画も区間の開始位置(A)に揃える（OFFなら自分の0:00＋オフセットに戻る）</label>
+    </div>
+
+    <p class="hint" style="margin-top: 12px;">キーボード操作: <b>Space</b> = 同時再生/一時停止　<b>←</b>/<b>→</b> = 1コマ戻す/進む　<b>Home</b> = 両方を先頭に戻す（入力欄にフォーカス中は無効）</p>
+  </div>
+
+  <div class="status" id="status">お手本動画を読み込み、カメラで自分の動きを録画して比較しましょう。</div>
+</div>
+
+<script>
+(function () {
+  // ---------- state ----------
+  let referenceMode = 'file'; // 'file' | 'youtube'
+  let ytPlayer = null;
+  let ytApiReady = false;
+  let pendingYtId = null;
+
+  let cameraStream = null;
+  let mediaRecorder = null;
+  let recordedChunks = [];
+  let recordStartTime = 0;
+  let recordTimerInterval = null;
+
+  let recordings = []; // {id, name, url, addedAt}
+  let activeRecordingId = null;
+
+  // ---------- elements ----------
+  const tabFileBtn = document.getElementById('tab-file-btn');
+  const tabYoutubeBtn = document.getElementById('tab-youtube-btn');
+  const fileSource = document.getElementById('file-source');
+  const youtubeSource = document.getElementById('youtube-source');
+  const refFileInput = document.getElementById('ref-file-input');
+  const refFileVideo = document.getElementById('ref-file-video');
+  const fileVideoWrapper = document.getElementById('file-video-wrapper');
+  const ytVideoWrapper = document.getElementById('yt-video-wrapper');
+  const ytUrlInput = document.getElementById('yt-url-input');
+  const ytLoadBtn = document.getElementById('yt-load-btn');
+  const refPlaceholder = document.getElementById('ref-placeholder');
+  const refMirrorToggle = document.getElementById('ref-mirror-toggle');
+
+  const videoStage = document.getElementById('video-stage');
+  const modeSideBySideBtn = document.getElementById('mode-sidebyside-btn');
+  const modeOverlayBtn = document.getElementById('mode-overlay-btn');
+  const modeSwipeBtn = document.getElementById('mode-swipe-btn');
+  const overlayOpacityRow = document.getElementById('overlay-opacity-row');
+  const overlayOpacityInput = document.getElementById('overlay-opacity-input');
+  const overlayOpacityValue = document.getElementById('overlay-opacity-value');
+  const swipeSplitRow = document.getElementById('swipe-split-row');
+  const swipeSplitInput = document.getElementById('swipe-split-input');
+  const swipeSplitValue = document.getElementById('swipe-split-value');
+  const swipeDivider = document.getElementById('swipe-divider');
+  const gridOverlayToggle = document.getElementById('grid-overlay-toggle');
+  const gridOverlayRef = document.getElementById('grid-overlay-ref');
+  const gridOverlayOwn = document.getElementById('grid-overlay-own');
+  const containerOwn = document.getElementById('container-own');
+  let compareMode = 'side'; // 'side' | 'overlay' | 'swipe'
+
+  const startInput = document.getElementById('start-input');
+  const endInput = document.getElementById('end-input');
+  const setStartBtn = document.getElementById('set-start-btn');
+  const setEndBtn = document.getElementById('set-end-btn');
+  const loopToggle = document.getElementById('loop-toggle');
+  const resetRangeBtn = document.getElementById('reset-range-btn');
+  const refSpeedSelect = document.getElementById('ref-speed-select');
+
+  const camStartBtn = document.getElementById('cam-start-btn');
+  const camStopBtn = document.getElementById('cam-stop-btn');
+  const mirrorToggle = document.getElementById('mirror-toggle');
+  const ownVideo = document.getElementById('own-video');
+  const backToLiveBtn = document.getElementById('back-to-live-btn');
+  const camErrorBox = document.getElementById('cam-error-box');
+  const recIndicator = document.getElementById('rec-indicator');
+  const recTimer = document.getElementById('rec-timer');
+  const recordBtn = document.getElementById('record-btn');
+  const ownFileInput = document.getElementById('own-file-input');
+
+  const recordingList = document.getElementById('recording-list');
+  const recordingEmptyHint = document.getElementById('recording-empty-hint');
+  const ownPlaceholder = document.getElementById('own-placeholder');
+  const ownSpeedSelect = document.getElementById('own-speed-select');
+
+  // ownMode: 'empty' | 'live' | 'playback' — the single #own-video slot
+  // switches between the live camera feed and a loaded recording.
+  let ownMode = 'empty';
+
+  const syncPlayBtn = document.getElementById('sync-play-btn');
+  const syncPauseBtn = document.getElementById('sync-pause-btn');
+  const syncResetBtn = document.getElementById('sync-reset-btn');
+  const frameBackBtn = document.getElementById('frame-back-btn');
+  const frameForwardBtn = document.getElementById('frame-forward-btn');
+  const offsetInput = document.getElementById('offset-input');
+  const offsetMinusBtn = document.getElementById('offset-minus-btn');
+  const offsetPlusBtn = document.getElementById('offset-plus-btn');
+  const captureOffsetBtn = document.getElementById('capture-offset-btn');
+  const ownLoopToggle = document.getElementById('own-loop-toggle');
+  const statusEl = document.getElementById('status');
+
+  function setStatus(msg) { statusEl.textContent = msg; }
+
+  // ---------- helpers ----------
+  function extractVideoId(input) {
+    input = input.trim();
+    if (/^[a-zA-Z0-9_-]{11}$/.test(input)) return input;
+    try {
+      const url = new URL(input);
+      if (url.hostname.includes('youtu.be')) return url.pathname.slice(1);
+      if (url.hostname.includes('youtube.com')) {
+        if (url.pathname === '/watch') return url.searchParams.get('v');
+        if (url.pathname.startsWith('/embed/')) return url.pathname.split('/embed/')[1];
+        if (url.pathname.startsWith('/shorts/')) return url.pathname.split('/shorts/')[1];
+      }
+    } catch (e) { return null; }
+    return null;
+  }
+
+  function parseTime(str) {
+    str = (str || '').trim();
+    if (str === '') return null;
+    const parts = str.split(':').map(s => s.trim()).filter(s => s !== '');
+    if (parts.length === 0 || parts.some(p => isNaN(Number(p)))) return null;
+    let seconds = 0;
+    for (const p of parts) seconds = seconds * 60 + Number(p);
+    return seconds >= 0 ? seconds : null;
+  }
+
+  function formatTime(totalSeconds) {
+    totalSeconds = Math.floor(totalSeconds || 0);
+    const m = Math.floor(totalSeconds / 60);
+    const s = totalSeconds % 60;
+    return `${m}:${String(s).padStart(2, '0')}`;
+  }
+
+  const SETTINGS_KEY = 'dancePracticeCompareSettings';
+  function saveSettings() {
+    try {
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify({
+        referenceMode,
+        ytUrl: ytUrlInput.value,
+        start: startInput.value,
+        end: endInput.value,
+        loop: loopToggle.checked,
+        refSpeed: refSpeedSelect.value,
+        ownSpeed: ownSpeedSelect.value,
+        refMirror: refMirrorToggle.checked,
+        offset: offsetInput.value,
+        ownLoop: ownLoopToggle.checked,
+        compareMode,
+        overlayOpacity: overlayOpacityInput.value,
+        swipeSplit: swipeSplitInput.value,
+        gridOverlay: gridOverlayToggle.checked
+      }));
+    } catch (e) {}
+  }
+  function loadSettings() {
+    try {
+      const raw = localStorage.getItem(SETTINGS_KEY);
+      if (!raw) return;
+      const s = JSON.parse(raw);
+      if (s.ytUrl) ytUrlInput.value = s.ytUrl;
+      if (s.start) startInput.value = s.start;
+      if (s.end) endInput.value = s.end;
+      if (typeof s.loop === 'boolean') loopToggle.checked = s.loop;
+      if (s.refSpeed) refSpeedSelect.value = s.refSpeed;
+      if (s.ownSpeed) ownSpeedSelect.value = s.ownSpeed;
+      if (typeof s.refMirror === 'boolean') refMirrorToggle.checked = s.refMirror;
+      applyRefMirror();
+      if (s.overlayOpacity !== undefined && s.overlayOpacity !== null && s.overlayOpacity !== '') overlayOpacityInput.value = s.overlayOpacity;
+      updateOverlayOpacityLabel();
+      if (s.swipeSplit !== undefined && s.swipeSplit !== null && s.swipeSplit !== '') swipeSplitInput.value = s.swipeSplit;
+      updateSwipeSplitLabel();
+      if (typeof s.gridOverlay === 'boolean') gridOverlayToggle.checked = s.gridOverlay;
+      applyGridOverlay();
+      setCompareMode(s.compareMode === 'overlay' || s.compareMode === 'swipe' ? s.compareMode : 'side');
+      if (s.offset !== undefined && s.offset !== null && s.offset !== '') offsetInput.value = s.offset;
+      if (typeof s.ownLoop === 'boolean') ownLoopToggle.checked = s.ownLoop;
+      if (s.referenceMode === 'youtube') switchMode('youtube');
+    } catch (e) {}
+  }
+
+  // ---------- reference source: tab switching ----------
+  function switchMode(mode) {
+    referenceMode = mode;
+    tabFileBtn.classList.toggle('active', mode === 'file');
+    tabYoutubeBtn.classList.toggle('active', mode === 'youtube');
+    fileSource.classList.toggle('hidden', mode !== 'file');
+    youtubeSource.classList.toggle('hidden', mode !== 'youtube');
+    fileVideoWrapper.classList.toggle('hidden', mode !== 'file');
+    ytVideoWrapper.classList.toggle('hidden', mode !== 'youtube');
+    const hasContent = mode === 'file' ? !!refFileVideo.src : !!ytPlayer;
+    refPlaceholder.classList.toggle('hidden', hasContent);
+    saveSettings();
+  }
+  tabFileBtn.addEventListener('click', () => switchMode('file'));
+  tabYoutubeBtn.addEventListener('click', () => switchMode('youtube'));
+
+  function applyRefMirror() {
+    const mirrored = refMirrorToggle.checked;
+    fileVideoWrapper.classList.toggle('mirrored', mirrored);
+    ytVideoWrapper.classList.toggle('mirrored', mirrored);
+  }
+  refMirrorToggle.addEventListener('change', () => { applyRefMirror(); saveSettings(); });
+
+  // ---------- compare mode: side-by-side vs. overlay vs. swipe ----------
+  function updateOverlayOpacityLabel() {
+    overlayOpacityValue.textContent = `${overlayOpacityInput.value}%`;
+  }
+  function applyOverlayOpacity() {
+    if (compareMode !== 'overlay') return;
+    containerOwn.style.opacity = String(Number(overlayOpacityInput.value) / 100);
+  }
+  function updateSwipeSplitLabel() {
+    swipeSplitValue.textContent = `${swipeSplitInput.value}%`;
+  }
+  function applySwipeSplit() {
+    if (compareMode !== 'swipe') return;
+    const pct = Number(swipeSplitInput.value);
+    containerOwn.style.clipPath = `inset(0 0 0 ${pct}%)`;
+    swipeDivider.style.left = `${pct}%`;
+  }
+  function setCompareMode(mode) {
+    compareMode = mode;
+    modeSideBySideBtn.classList.toggle('active', mode === 'side');
+    modeOverlayBtn.classList.toggle('active', mode === 'overlay');
+    modeSwipeBtn.classList.toggle('active', mode === 'swipe');
+    videoStage.classList.toggle('overlay-mode', mode === 'overlay');
+    videoStage.classList.toggle('swipe-mode', mode === 'swipe');
+    overlayOpacityRow.classList.toggle('hidden', mode !== 'overlay');
+    swipeSplitRow.classList.toggle('hidden', mode !== 'swipe');
+    if (mode === 'overlay') {
+      applyOverlayOpacity();
+      containerOwn.style.clipPath = '';
+    } else if (mode === 'swipe') {
+      containerOwn.style.opacity = '';
+      applySwipeSplit();
+    } else {
+      containerOwn.style.opacity = '';
+      containerOwn.style.clipPath = '';
+    }
+  }
+  modeSideBySideBtn.addEventListener('click', () => { setCompareMode('side'); saveSettings(); });
+  modeOverlayBtn.addEventListener('click', () => { setCompareMode('overlay'); saveSettings(); });
+  modeSwipeBtn.addEventListener('click', () => { setCompareMode('swipe'); saveSettings(); });
+  overlayOpacityInput.addEventListener('input', () => {
+    updateOverlayOpacityLabel();
+    applyOverlayOpacity();
+  });
+  overlayOpacityInput.addEventListener('change', saveSettings);
+  swipeSplitInput.addEventListener('input', () => {
+    updateSwipeSplitLabel();
+    applySwipeSplit();
+  });
+  swipeSplitInput.addEventListener('change', saveSettings);
+
+  // ---------- alignment grid overlay ----------
+  function applyGridOverlay() {
+    const visible = gridOverlayToggle.checked;
+    gridOverlayRef.classList.toggle('visible', visible);
+    gridOverlayOwn.classList.toggle('visible', visible);
+  }
+  gridOverlayToggle.addEventListener('change', () => { applyGridOverlay(); saveSettings(); });
+
+  // ---------- reference: file source ----------
+  refFileInput.addEventListener('change', () => {
+    const file = refFileInput.files[0];
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    refFileVideo.src = url;
+    refPlaceholder.classList.add('hidden');
+    setStatus(`お手本動画「${file.name}」を読み込みました。`);
+  });
+  refFileVideo.addEventListener('loadedmetadata', () => {
+    refFileVideo.playbackRate = parseFloat(refSpeedSelect.value);
+  });
+
+  // ---------- reference: youtube source ----------
+  window.onYouTubeIframeAPIReady = function () {
+    ytApiReady = true;
+    if (pendingYtId) { createYtPlayer(pendingYtId); pendingYtId = null; }
+  };
+
+  function createYtPlayer(videoId) {
+    if (ytPlayer) { ytPlayer.loadVideoById(videoId); return; }
+    ytPlayer = new YT.Player('yt-player', {
+      videoId: videoId,
+      playerVars: { rel: 0, playsinline: 1 },
+      events: {
+        onReady: () => {
+          refPlaceholder.classList.add('hidden');
+          ytPlayer.setPlaybackRate(parseFloat(refSpeedSelect.value));
+          setStatus('お手本動画（YouTube）を読み込みました。');
+        },
+        onStateChange: (event) => {
+          if (event.data === YT.PlayerState.ENDED && loopToggle.checked) {
+            const startSec = parseTime(startInput.value) || 0;
+            ytPlayer.seekTo(startSec, true);
+            ytPlayer.playVideo();
+          }
+        }
+      }
+    });
+  }
+
+  ytLoadBtn.addEventListener('click', () => {
+    const videoId = extractVideoId(ytUrlInput.value);
+    if (!videoId) { setStatus('有効なYouTube URLまたは動画IDを入力してください。'); return; }
+    switchMode('youtube');
+    if (ytApiReady) createYtPlayer(videoId); else pendingYtId = videoId;
+    saveSettings();
+  });
+  ytUrlInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') ytLoadBtn.click(); });
+
+  const ytTag = document.createElement('script');
+  ytTag.src = 'https://www.youtube.com/iframe_api';
+  document.head.appendChild(ytTag);
+
+  // ---------- reference: unified control wrapper ----------
+  function refPlay() {
+    if (referenceMode === 'youtube') { if (ytPlayer && ytPlayer.playVideo) ytPlayer.playVideo(); }
+    else { refFileVideo.play(); }
+  }
+  function refPause() {
+    if (referenceMode === 'youtube') { if (ytPlayer && ytPlayer.pauseVideo) ytPlayer.pauseVideo(); }
+    else { refFileVideo.pause(); }
+  }
+  function refSeek(sec) {
+    if (referenceMode === 'youtube') { if (ytPlayer && ytPlayer.seekTo) ytPlayer.seekTo(sec, true); }
+    else { refFileVideo.currentTime = sec; }
+  }
+  function refGetCurrentTime() {
+    if (referenceMode === 'youtube') return (ytPlayer && ytPlayer.getCurrentTime) ? ytPlayer.getCurrentTime() : 0;
+    return refFileVideo.currentTime || 0;
+  }
+  function refSetRate(rate) {
+    if (referenceMode === 'youtube') { if (ytPlayer && ytPlayer.setPlaybackRate) ytPlayer.setPlaybackRate(rate); }
+    else { refFileVideo.playbackRate = rate; }
+  }
+
+  // ---------- A-B loop watcher (works for both file & youtube; own video follows the ref's loop) ----------
+  setInterval(() => {
+    if (!loopToggle.checked) return;
+    const endSec = parseTime(endInput.value);
+    if (endSec === null) return;
+    const startSec = parseTime(startInput.value) || 0;
+
+    const refHasContent = referenceMode === 'file' ? !!refFileVideo.src : !!ytPlayer;
+    if (!refHasContent) return;
+    const refPlaying = referenceMode === 'file' ? !refFileVideo.paused : true;
+    if (!refPlaying || refGetCurrentTime() < endSec) return;
+
+    try { refSeek(startSec); } catch (e) { console.error(e); }
+    if (ownMode === 'playback') {
+      try {
+        const offset = getOffset();
+        // Same rule as the "両方を先頭に戻す" button: follow the loop start
+        // (A) when the toggle is on, otherwise anchor to the own video's own
+        // 0:00, in both cases shifted by the offset.
+        const ownBaseSec = ownLoopToggle.checked ? startSec : 0;
+        ownVideo.currentTime = Math.max(0, ownBaseSec + offset);
+        // own video may have paused/ended if its content is shorter than the
+        // loop segment; setting currentTime alone won't resume playback.
+        ownVideo.play();
+      } catch (e) { console.error(e); }
+    }
+  }, 250);
+
+  setStartBtn.addEventListener('click', () => { startInput.value = formatTime(refGetCurrentTime()); saveSettings(); });
+  setEndBtn.addEventListener('click', () => { endInput.value = formatTime(refGetCurrentTime()); saveSettings(); });
+  resetRangeBtn.addEventListener('click', () => { startInput.value = ''; endInput.value = ''; saveSettings(); });
+  [startInput, endInput, loopToggle, ownLoopToggle].forEach(el => el.addEventListener('change', saveSettings));
+  refSpeedSelect.addEventListener('change', () => { refSetRate(parseFloat(refSpeedSelect.value)); saveSettings(); });
+
+  // ---------- loop range presets ----------
+  const presetNameInput = document.getElementById('preset-name-input');
+  const savePresetBtn = document.getElementById('save-preset-btn');
+  const presetList = document.getElementById('preset-list');
+  const presetEmptyHint = document.getElementById('preset-empty-hint');
+
+  const PRESETS_KEY = 'dancePracticeComparePresets';
+  let presets = [];
+
+  function loadPresets() {
+    try {
+      const raw = localStorage.getItem(PRESETS_KEY);
+      presets = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(presets)) presets = [];
+    } catch (e) { presets = []; }
+  }
+  function persistPresets() {
+    try { localStorage.setItem(PRESETS_KEY, JSON.stringify(presets)); } catch (e) {}
+  }
+
+  function addPreset(name) {
+    presets.push({
+      id: Date.now() + Math.random(),
+      name,
+      mode: referenceMode,
+      url: referenceMode === 'youtube' ? ytUrlInput.value : '',
+      start: startInput.value,
+      end: endInput.value
+    });
+    persistPresets();
+    renderPresetList();
+  }
+
+  function deletePreset(id) {
+    presets = presets.filter(p => p.id !== id);
+    persistPresets();
+    renderPresetList();
+  }
+
+  function applyPreset(preset) {
+    startInput.value = preset.start || '';
+    endInput.value = preset.end || '';
+    if (preset.mode === 'youtube' && preset.url) {
+      ytUrlInput.value = preset.url;
+      switchMode('youtube');
+      const videoId = extractVideoId(preset.url);
+      if (videoId) {
+        if (ytApiReady) createYtPlayer(videoId); else pendingYtId = videoId;
+      }
+    } else {
+      switchMode('file');
+      if (!refFileVideo.src) setStatus(`プリセット「${preset.name}」の区間を設定しました。ファイル動画を選び直してください。`);
+    }
+    saveSettings();
+    setStatus(`プリセット「${preset.name}」を読み込みました。`);
+  }
+
+  function renderPresetList() {
+    presetList.innerHTML = '';
+    presetEmptyHint.style.display = presets.length === 0 ? '' : 'none';
+    presets.forEach((preset) => {
+      const el = document.createElement('div');
+      el.className = 'recording-item';
+
+      const info = document.createElement('div');
+      info.className = 'recording-info';
+      const nameEl = document.createElement('div');
+      nameEl.className = 'recording-name';
+      nameEl.textContent = preset.name;
+      const rangeEl = document.createElement('div');
+      rangeEl.className = 'recording-time';
+      const modeLabel = preset.mode === 'youtube' ? 'YouTube' : 'ファイル';
+      rangeEl.textContent = `${preset.start || '0:00'} 〜 ${preset.end || '最後まで'}（${modeLabel}）`;
+      info.appendChild(nameEl);
+      info.appendChild(rangeEl);
+
+      const actions = document.createElement('div');
+      actions.className = 'recording-actions';
+      const loadBtn = document.createElement('button');
+      loadBtn.className = 'secondary';
+      loadBtn.textContent = '読み込む';
+      loadBtn.addEventListener('click', () => applyPreset(preset));
+      const delBtn = document.createElement('button');
+      delBtn.className = 'secondary';
+      delBtn.textContent = '削除';
+      delBtn.addEventListener('click', () => deletePreset(preset.id));
+      actions.appendChild(loadBtn);
+      actions.appendChild(delBtn);
+
+      el.appendChild(info);
+      el.appendChild(actions);
+      presetList.appendChild(el);
+    });
+  }
+
+  savePresetBtn.addEventListener('click', () => {
+    const name = presetNameInput.value.trim();
+    if (!name) { setStatus('プリセット名を入力してください。'); return; }
+    addPreset(name);
+    presetNameInput.value = '';
+    setStatus(`プリセット「${name}」を保存しました。`);
+  });
+
+  // ---------- own video slot: mode switching ----------
+  function applyMirror() {
+    ownVideo.classList.toggle('mirrored', ownMode === 'live' && mirrorToggle.checked);
+  }
+  mirrorToggle.addEventListener('change', applyMirror);
+
+  function showLive() {
+    if (!cameraStream) return;
+    ownVideo.pause();
+    ownVideo.removeAttribute('src');
+    ownVideo.load();
+    ownVideo.muted = true;
+    ownVideo.autoplay = true;
+    ownVideo.removeAttribute('controls');
+    ownVideo.srcObject = cameraStream;
+    ownMode = 'live';
+    ownPlaceholder.classList.add('hidden');
+    backToLiveBtn.classList.add('hidden');
+    applyMirror();
+  }
+
+  function clearOwnVideoToEmpty() {
+    ownVideo.srcObject = null;
+    ownVideo.removeAttribute('src');
+    ownVideo.load();
+    ownMode = 'empty';
+    ownPlaceholder.classList.remove('hidden');
+    backToLiveBtn.classList.add('hidden');
+    applyMirror();
+  }
+
+  backToLiveBtn.addEventListener('click', showLive);
+
+  // ---------- camera ----------
+  function showCamError(message) { camErrorBox.textContent = message; camErrorBox.classList.add('visible'); }
+  function clearCamError() { camErrorBox.textContent = ''; camErrorBox.classList.remove('visible'); }
+
+  async function startCamera() {
+    clearCamError();
+    if (!window.isSecureContext) {
+      showCamError('このページは安全なコンテキスト（localhost または HTTPS）で開かれていないため、カメラにアクセスできません。');
+      return;
+    }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      showCamError('このブラウザはカメラ映像の取得に対応していません。');
+      return;
+    }
+    camStartBtn.disabled = true;
+    try {
+      cameraStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      camStopBtn.disabled = false;
+      recordBtn.disabled = false;
+      showLive();
+    } catch (err) {
+      let message = 'カメラへのアクセスに失敗しました: ' + err.message;
+      if (err.name === 'NotAllowedError') message = 'カメラへのアクセスが許可されていません。ブラウザの権限設定を確認してください。';
+      else if (err.name === 'NotFoundError') message = '利用可能なカメラが見つかりませんでした。';
+      showCamError(message);
+      camStartBtn.disabled = false;
+    }
+  }
+
+  function stopCamera() {
+    if (isRecording()) stopRecording();
+    if (cameraStream) { cameraStream.getTracks().forEach(t => t.stop()); cameraStream = null; }
+    if (ownMode === 'live') clearOwnVideoToEmpty();
+    else backToLiveBtn.classList.add('hidden');
+    camStartBtn.disabled = false;
+    camStopBtn.disabled = true;
+    recordBtn.disabled = true;
+  }
+
+  camStartBtn.addEventListener('click', startCamera);
+  camStopBtn.addEventListener('click', stopCamera);
+
+  // ---------- recording ----------
+  function isRecording() { return !!mediaRecorder && mediaRecorder.state === 'recording'; }
+
+  function pickMimeType() {
+    const candidates = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
+    for (const c of candidates) {
+      if (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(c)) return c;
+    }
+    return '';
+  }
+
+  // Chrome's MediaRecorder writes WebM files with the Segment>Info>Duration
+  // field left at 0 (it doesn't know the final length while streaming).
+  // <video> then reports duration as Infinity, and seeking (loop resets,
+  // frame stepping) becomes unreliable. This patches that one field in the
+  // file's bytes once, up front, so normal playback/seeking works from then
+  // on with no runtime workarounds needed.
+  async function fixWebmDuration(blob, durationSeconds) {
+    try {
+      const buffer = await blob.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      const view = new DataView(buffer);
+
+      function vintLength(byte) {
+        for (let i = 0; i < 8; i++) { if (byte & (0x80 >> i)) return i + 1; }
+        return -1;
+      }
+
+      function readHeader(offset) {
+        if (offset >= bytes.length) return null;
+        const idLen = vintLength(bytes[offset]);
+        if (idLen < 0 || offset + idLen > bytes.length) return null;
+        let id = 0;
+        for (let i = 0; i < idLen; i++) id = id * 256 + bytes[offset + i];
+
+        const sizeOffset = offset + idLen;
+        if (sizeOffset >= bytes.length) return null;
+        const sizeLen = vintLength(bytes[sizeOffset]);
+        if (sizeLen < 0 || sizeOffset + sizeLen > bytes.length) return null;
+        const marker = 0x80 >> (sizeLen - 1);
+        let size = bytes[sizeOffset] & (marker - 1);
+        let unknown = size === marker - 1;
+        for (let i = 1; i < sizeLen; i++) {
+          if (bytes[sizeOffset + i] !== 0xFF) unknown = false;
+          size = size * 256 + bytes[sizeOffset + i];
+        }
+        const dataOffset = sizeOffset + sizeLen;
+        return { id, size, unknown, dataOffset, end: dataOffset + size };
+      }
+
+      function findChild(start, end, targetId) {
+        let offset = start;
+        while (offset < end) {
+          const el = readHeader(offset);
+          if (!el) return null;
+          if (el.id === targetId) return el;
+          if (el.unknown) return null; // can't safely skip an unknown-size element
+          offset = el.end;
+        }
+        return null;
+      }
+
+      const SEGMENT_ID = 0x18538067;
+      const INFO_ID = 0x1549A966;
+      const DURATION_ID = 0x4489;
+
+      const segment = findChild(0, bytes.length, SEGMENT_ID);
+      if (!segment) return blob;
+      const segmentEnd = segment.unknown ? bytes.length : segment.end;
+      const info = findChild(segment.dataOffset, segmentEnd, INFO_ID);
+      if (!info) return blob;
+      const infoEnd = info.unknown ? segmentEnd : info.end;
+      const duration = findChild(info.dataOffset, infoEnd, DURATION_ID);
+      if (!duration || (duration.size !== 4 && duration.size !== 8)) return blob;
+
+      // Duration is in "ticks" of TimecodeScale; Chrome defaults to 1ms ticks.
+      const durationTicks = durationSeconds * 1000;
+      if (duration.size === 8) view.setFloat64(duration.dataOffset, durationTicks, false);
+      else view.setFloat32(duration.dataOffset, durationTicks, false);
+
+      return new Blob([bytes], { type: blob.type });
+    } catch (e) {
+      return blob;
+    }
+  }
+
+  function startRecording() {
+    if (!cameraStream) return;
+    if (ownMode !== 'live') showLive();
+    const loopStartSec = parseTime(startInput.value) || 0;
+    refSeek(loopStartSec);
+    refPlay();
+    recordedChunks = [];
+    const mimeType = pickMimeType();
+    try {
+      mediaRecorder = mimeType ? new MediaRecorder(cameraStream, { mimeType }) : new MediaRecorder(cameraStream);
+    } catch (e) {
+      setStatus('録画を開始できませんでした: ' + e.message);
+      return;
+    }
+    mediaRecorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) recordedChunks.push(e.data); };
+    mediaRecorder.onstop = async () => {
+      const rawBlob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || 'video/webm' });
+      const elapsedSeconds = (Date.now() - recordStartTime) / 1000;
+      const blob = await fixWebmDuration(rawBlob, elapsedSeconds);
+      const url = URL.createObjectURL(blob);
+      const now = new Date();
+      addRecording(`録画 ${now.toLocaleTimeString('ja-JP')}`, url);
+    };
+    mediaRecorder.start();
+    recordStartTime = Date.now();
+    recIndicator.classList.remove('hidden');
+    recordTimerInterval = setInterval(() => {
+      recTimer.textContent = formatTime((Date.now() - recordStartTime) / 1000);
+    }, 250);
+    recordBtn.textContent = '録画停止';
+    recordBtn.classList.add('recording');
+    setStatus('録画中...');
+  }
+
+  function stopRecording() {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+    clearInterval(recordTimerInterval);
+    recIndicator.classList.add('hidden');
+    recordBtn.textContent = '録画開始';
+    recordBtn.classList.remove('recording');
+  }
+
+  recordBtn.addEventListener('click', () => { isRecording() ? stopRecording() : startRecording(); });
+
+  // ---------- own video: upload ----------
+  ownFileInput.addEventListener('change', () => {
+    const file = ownFileInput.files[0];
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    addRecording(file.name, url);
+    ownFileInput.value = '';
+  });
+
+  // ---------- recording list ----------
+  function addRecording(name, url) {
+    const item = { id: Date.now() + Math.random(), name, url, addedAt: new Date() };
+    recordings.push(item);
+    renderRecordingList();
+    loadRecording(item.id);
+    setStatus(`「${name}」を録画リストに追加し、比較用プレーヤーに読み込みました。`);
+  }
+
+  function loadRecording(id) {
+    const item = recordings.find(r => r.id === id);
+    if (!item) return;
+    activeRecordingId = id;
+    ownVideo.srcObject = null;
+    ownVideo.autoplay = false;
+    ownVideo.muted = false;
+    ownVideo.setAttribute('controls', '');
+    ownVideo.src = item.url;
+    ownVideo.playbackRate = parseFloat(ownSpeedSelect.value);
+    ownMode = 'playback';
+    ownPlaceholder.classList.add('hidden');
+    backToLiveBtn.classList.toggle('hidden', !cameraStream);
+    applyMirror();
+    renderRecordingList();
+  }
+
+  function deleteRecording(id) {
+    const idx = recordings.findIndex(r => r.id === id);
+    if (idx === -1) return;
+    const item = recordings[idx];
+    if (activeRecordingId === id) {
+      activeRecordingId = null;
+      if (cameraStream) showLive();
+      else clearOwnVideoToEmpty();
+    }
+    URL.revokeObjectURL(item.url);
+    recordings.splice(idx, 1);
+    renderRecordingList();
+  }
+
+  function renderRecordingList() {
+    recordingList.innerHTML = '';
+    recordingEmptyHint.style.display = recordings.length === 0 ? '' : 'none';
+    recordings.slice().reverse().forEach((item) => {
+      const el = document.createElement('div');
+      el.className = 'recording-item' + (item.id === activeRecordingId ? ' active' : '');
+
+      const info = document.createElement('div');
+      info.className = 'recording-info';
+      const nameEl = document.createElement('div');
+      nameEl.className = 'recording-name';
+      nameEl.textContent = item.name;
+      const timeEl = document.createElement('div');
+      timeEl.className = 'recording-time';
+      timeEl.textContent = item.addedAt.toLocaleTimeString('ja-JP');
+      info.appendChild(nameEl);
+      info.appendChild(timeEl);
+
+      const actions = document.createElement('div');
+      actions.className = 'recording-actions';
+
+      const loadBtn = document.createElement('button');
+      loadBtn.className = 'secondary';
+      loadBtn.textContent = '読み込む';
+      loadBtn.addEventListener('click', () => loadRecording(item.id));
+
+      const dlLink = document.createElement('a');
+      dlLink.className = 'secondary';
+      dlLink.style.border = '1px solid var(--border)';
+      dlLink.style.color = 'var(--text)';
+      dlLink.style.display = 'inline-flex';
+      dlLink.style.alignItems = 'center';
+      dlLink.href = item.url;
+      dlLink.download = item.name.endsWith('.webm') || item.name.includes('.') ? item.name : item.name + '.webm';
+      dlLink.textContent = 'DL';
+
+      const delBtn = document.createElement('button');
+      delBtn.className = 'secondary';
+      delBtn.textContent = '削除';
+      delBtn.addEventListener('click', () => deleteRecording(item.id));
+
+      actions.appendChild(loadBtn);
+      actions.appendChild(dlLink);
+      actions.appendChild(delBtn);
+
+      el.appendChild(info);
+      el.appendChild(actions);
+      recordingList.appendChild(el);
+    });
+  }
+
+  ownVideo.addEventListener('loadedmetadata', () => {
+    if (ownMode !== 'playback') return;
+    ownVideo.playbackRate = parseFloat(ownSpeedSelect.value);
+  });
+  ownSpeedSelect.addEventListener('change', () => {
+    if (ownMode === 'playback') ownVideo.playbackRate = parseFloat(ownSpeedSelect.value);
+    saveSettings();
+  });
+
+  // ---------- sync controls ----------
+  const FRAME_STEP = 1 / 30; // approximate single-frame duration; not frame-exact
+
+  function getOffset() {
+    const v = parseFloat(offsetInput.value);
+    return isNaN(v) ? 0 : v;
+  }
+
+  // Runs ref-side and own-side actions independently so that an error or
+  // unsupported state on one side (e.g. no reference video loaded) can never
+  // block the other side from updating.
+  function safely(fn) {
+    try { fn(); } catch (e) { console.error(e); }
+  }
+
+  function syncPlay() {
+    safely(() => refPlay());
+    safely(() => { if (ownMode === 'playback') ownVideo.play(); });
+  }
+  function syncPause() {
+    safely(() => refPause());
+    safely(() => { if (ownMode === 'playback') ownVideo.pause(); });
+  }
+  function syncReset() {
+    const loopStartSec = parseTime(startInput.value) || 0;
+    const offset = getOffset();
+    // Own video's baseline follows the loop start (A) only when the loop is
+    // also applied to it; otherwise it resets to its own 0:00 + offset.
+    const ownBaseSec = ownLoopToggle.checked ? loopStartSec : 0;
+    const ownTarget = ownBaseSec + offset;
+    const refTarget = ownTarget >= 0 ? loopStartSec : loopStartSec - ownTarget;
+    safely(() => refSeek(refTarget));
+    safely(() => { if (ownMode === 'playback') ownVideo.currentTime = Math.max(0, ownTarget); });
+  }
+  syncPlayBtn.addEventListener('click', syncPlay);
+  syncPauseBtn.addEventListener('click', syncPause);
+  syncResetBtn.addEventListener('click', syncReset);
+
+  function stepFrame(direction) {
+    const delta = direction * FRAME_STEP;
+    safely(() => {
+      refPause();
+      refSeek(Math.max(0, refGetCurrentTime() + delta));
+    });
+    safely(() => {
+      if (ownMode !== 'playback') return;
+      ownVideo.pause();
+      ownVideo.currentTime = Math.max(0, ownVideo.currentTime + delta);
+    });
+  }
+  frameBackBtn.addEventListener('click', () => stepFrame(-1));
+  frameForwardBtn.addEventListener('click', () => stepFrame(1));
+
+  function isRefPlaying() {
+    if (referenceMode === 'youtube') {
+      return !!ytPlayer && typeof ytPlayer.getPlayerState === 'function' &&
+        ytPlayer.getPlayerState() === YT.PlayerState.PLAYING;
+    }
+    return !refFileVideo.paused && !refFileVideo.ended;
+  }
+
+  function isFormField(el) {
+    if (!el) return false;
+    const tag = el.tagName;
+    return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable;
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (isFormField(e.target)) return;
+    switch (e.code) {
+      case 'Space':
+        e.preventDefault();
+        isRefPlaying() ? syncPause() : syncPlay();
+        break;
+      case 'ArrowLeft':
+        e.preventDefault();
+        stepFrame(-1);
+        break;
+      case 'ArrowRight':
+        e.preventDefault();
+        stepFrame(1);
+        break;
+      case 'Home':
+        e.preventDefault();
+        syncReset();
+        break;
+    }
+  });
+
+  function nudgeOffset(delta) {
+    offsetInput.value = (getOffset() + delta).toFixed(2);
+    saveSettings();
+  }
+  offsetMinusBtn.addEventListener('click', () => nudgeOffset(-0.1));
+  offsetPlusBtn.addEventListener('click', () => nudgeOffset(0.1));
+  offsetInput.addEventListener('change', saveSettings);
+
+  captureOffsetBtn.addEventListener('click', () => {
+    if (ownMode !== 'playback') {
+      setStatus('録画リストから自分の動画を読み込んでから使ってください。');
+      return;
+    }
+    const refT = refGetCurrentTime();
+    const ownT = ownVideo.currentTime;
+    offsetInput.value = (ownT - refT).toFixed(2);
+    saveSettings();
+    setStatus(`ズレを ${offsetInput.value} 秒として記憶しました。`);
+  });
+
+  // ---------- init ----------
+  window.addEventListener('beforeunload', () => {
+    recordings.forEach(r => URL.revokeObjectURL(r.url));
+  });
+
+  loadSettings();
+  renderRecordingList();
+  loadPresets();
+  renderPresetList();
+})();
+</script>
+</body>
+</html>
