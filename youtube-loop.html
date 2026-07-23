@@ -100,6 +100,21 @@
     margin-bottom: 16px;
   }
   #player { width: 100%; height: 100%; }
+  .pan-overlay {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    cursor: grab;
+    touch-action: none;
+  }
+  .pan-overlay.active { pointer-events: auto; }
+  .pan-overlay.dragging { cursor: grabbing; }
+  .zoom-value {
+    font-size: 13px;
+    color: var(--muted);
+    min-width: 48px;
+    text-align: right;
+  }
   .field {
     display: flex;
     flex-direction: column;
@@ -212,6 +227,31 @@
 
   <div class="player-container">
     <div id="player"></div>
+    <div class="pan-overlay" id="pan-overlay"></div>
+  </div>
+
+  <div class="panel">
+    <p class="section-title">再生操作</p>
+    <div class="row">
+      <button id="play-btn">再生</button>
+      <button class="secondary" id="pause-btn">一時停止</button>
+      <button class="secondary" id="step-frame-btn">コマ送り</button>
+    </div>
+    <p class="hint">コマ送りは一時停止した上で約1/30秒ずつ進めます(YouTubeは正確なフレーム単位の制御に対応していないため、近似のコマ送りです)。</p>
+  </div>
+
+  <div class="panel">
+    <p class="section-title">ズーム</p>
+    <div class="row">
+      <input type="range" id="zoom-slider" min="1" max="4" step="0.05" value="1" style="flex:1; min-width:160px;" />
+      <span class="zoom-value" id="zoom-value">100%</span>
+      <button class="secondary" id="reset-zoom-btn">リセット</button>
+    </div>
+    <div class="toggle-row" style="margin-top:8px;">
+      <input type="checkbox" id="pan-mode-toggle" />
+      <label for="pan-mode-toggle" style="margin:0;">ドラッグで表示位置を移動(パンモード)</label>
+    </div>
+    <p class="hint">パンモードを有効にしている間は動画上のドラッグが位置移動に使われ、動画自体の再生/一時停止などの操作はできません。操作する時はオフにしてください。</p>
   </div>
 
   <div class="panel">
@@ -485,6 +525,7 @@
     setStatus('動画を読み込みました。再生できます。');
     applySpeed();
     startLoopWatcher();
+    applyZoomTransform();
   }
 
   function onPlayerStateChange(event) {
@@ -520,6 +561,96 @@
       player.setPlaybackRate(rate);
     }
   }
+
+  document.getElementById('play-btn').addEventListener('click', () => {
+    if (player && typeof player.playVideo === 'function') player.playVideo();
+  });
+
+  document.getElementById('pause-btn').addEventListener('click', () => {
+    if (player && typeof player.pauseVideo === 'function') player.pauseVideo();
+  });
+
+  document.getElementById('step-frame-btn').addEventListener('click', () => {
+    if (!player || typeof player.getCurrentTime !== 'function') return;
+    const FRAME_STEP = 1 / 30;
+    player.pauseVideo();
+    player.seekTo(player.getCurrentTime() + FRAME_STEP, true);
+  });
+
+  let zoom = 1;
+  let panX = 0;
+  let panY = 0;
+  let isPanning = false;
+  let panStartClientX = 0;
+  let panStartClientY = 0;
+  let panStartX = 0;
+  let panStartY = 0;
+
+  function applyZoomTransform() {
+    const iframeEl = document.getElementById('player');
+    if (!iframeEl) return;
+    iframeEl.style.transformOrigin = 'center center';
+    iframeEl.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
+  }
+
+  function clampPan() {
+    const container = document.querySelector('.player-container');
+    const rect = container.getBoundingClientRect();
+    const maxX = (rect.width * (zoom - 1)) / 2;
+    const maxY = (rect.height * (zoom - 1)) / 2;
+    panX = Math.max(-maxX, Math.min(maxX, panX));
+    panY = Math.max(-maxY, Math.min(maxY, panY));
+  }
+
+  document.getElementById('zoom-slider').addEventListener('input', (e) => {
+    zoom = parseFloat(e.target.value);
+    document.getElementById('zoom-value').textContent = `${Math.round(zoom * 100)}%`;
+    clampPan();
+    applyZoomTransform();
+  });
+
+  document.getElementById('reset-zoom-btn').addEventListener('click', () => {
+    zoom = 1;
+    panX = 0;
+    panY = 0;
+    document.getElementById('zoom-slider').value = '1';
+    document.getElementById('zoom-value').textContent = '100%';
+    applyZoomTransform();
+  });
+
+  const panOverlay = document.getElementById('pan-overlay');
+
+  document.getElementById('pan-mode-toggle').addEventListener('change', (e) => {
+    panOverlay.classList.toggle('active', e.target.checked);
+  });
+
+  panOverlay.addEventListener('pointerdown', (e) => {
+    isPanning = true;
+    panStartClientX = e.clientX;
+    panStartClientY = e.clientY;
+    panStartX = panX;
+    panStartY = panY;
+    panOverlay.setPointerCapture(e.pointerId);
+    panOverlay.classList.add('dragging');
+  });
+
+  panOverlay.addEventListener('pointermove', (e) => {
+    if (!isPanning) return;
+    panX = panStartX + (e.clientX - panStartClientX);
+    panY = panStartY + (e.clientY - panStartClientY);
+    clampPan();
+    applyZoomTransform();
+  });
+
+  panOverlay.addEventListener('pointerup', () => {
+    isPanning = false;
+    panOverlay.classList.remove('dragging');
+  });
+
+  panOverlay.addEventListener('pointercancel', () => {
+    isPanning = false;
+    panOverlay.classList.remove('dragging');
+  });
 
   document.getElementById('load-btn').addEventListener('click', () => {
     const raw = document.getElementById('url-input').value;
