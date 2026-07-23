@@ -204,6 +204,17 @@
   .ref-video-wrapper { position: absolute; inset: 0; }
   .ref-video-wrapper.hidden { display: none; }
   .ref-video-wrapper.mirrored { transform: scaleX(-1); }
+  .ref-zoom-inner { width: 100%; height: 100%; transform-origin: center center; }
+  .ref-zoom-dragger {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    cursor: grab;
+    touch-action: none;
+    display: none;
+  }
+  .ref-zoom-dragger.active { display: block; }
+  .ref-zoom-dragger.dragging { cursor: grabbing; }
   #ref-file-video, #yt-player, #own-video { width: 100%; height: 100%; }
   #ref-file-video, #own-video { object-fit: contain; }
   #own-video.mirrored { transform: scaleX(-1); }
@@ -341,16 +352,29 @@
     </div>
   </div>
 
+  <div class="panel" id="panel-ref-zoom">
+    <p class="section-title">お手本のズーム</p>
+    <div class="row">
+      <button class="secondary" id="ref-zoom-out-btn">－</button>
+      <input type="range" id="ref-zoom-input" min="100" max="300" step="10" value="100" />
+      <button class="secondary" id="ref-zoom-in-btn">＋</button>
+      <span class="opacity-value" id="ref-zoom-value">100%</span>
+      <button class="secondary" id="ref-zoom-reset-btn">リセット</button>
+    </div>
+    <p class="hint">拡大すると、お手本動画をドラッグして表示位置を移動できます。</p>
+  </div>
+
   <div class="video-stage" id="video-stage">
     <div class="swipe-divider" id="swipe-divider"></div>
     <div class="player-container" id="container-ref">
       <div class="grid-overlay" id="grid-overlay-ref"></div>
       <div id="file-video-wrapper" class="ref-video-wrapper">
-        <video id="ref-file-video" playsinline controls></video>
+        <div class="ref-zoom-inner"><video id="ref-file-video" playsinline controls></video></div>
       </div>
       <div id="yt-video-wrapper" class="ref-video-wrapper hidden">
-        <div id="yt-player"></div>
+        <div class="ref-zoom-inner"><div id="yt-player"></div></div>
       </div>
+      <div class="ref-zoom-dragger" id="ref-zoom-dragger"></div>
       <div id="ref-placeholder" class="placeholder">お手本動画を読み込んでください</div>
     </div>
 
@@ -566,7 +590,21 @@
   const gridOverlayRef = document.getElementById('grid-overlay-ref');
   const gridOverlayOwn = document.getElementById('grid-overlay-own');
   const containerOwn = document.getElementById('container-own');
+  const containerRef = document.getElementById('container-ref');
   let compareMode = 'side'; // 'side' | 'overlay' | 'swipe'
+
+  const refZoomInput = document.getElementById('ref-zoom-input');
+  const refZoomValue = document.getElementById('ref-zoom-value');
+  const refZoomInBtn = document.getElementById('ref-zoom-in-btn');
+  const refZoomOutBtn = document.getElementById('ref-zoom-out-btn');
+  const refZoomResetBtn = document.getElementById('ref-zoom-reset-btn');
+  const refZoomDragger = document.getElementById('ref-zoom-dragger');
+  const refZoomInners = document.querySelectorAll('.ref-zoom-inner');
+  let refZoom = 1;
+  let refPanX = 0;
+  let refPanY = 0;
+  let isDraggingRef = false;
+  let dragStartX = 0, dragStartY = 0, dragStartPanX = 0, dragStartPanY = 0;
 
   const startInput = document.getElementById('start-input');
   const endInput = document.getElementById('end-input');
@@ -660,7 +698,10 @@
         compareMode,
         overlayOpacity: overlayOpacityInput.value,
         swipeSplit: swipeSplitInput.value,
-        gridOverlay: gridOverlayToggle.checked
+        gridOverlay: gridOverlayToggle.checked,
+        refZoom,
+        refPanX,
+        refPanY
       }));
     } catch (e) {}
   }
@@ -684,6 +725,9 @@
       if (typeof s.gridOverlay === 'boolean') gridOverlayToggle.checked = s.gridOverlay;
       applyGridOverlay();
       setCompareMode(s.compareMode === 'overlay' || s.compareMode === 'swipe' ? s.compareMode : 'side');
+      if (typeof s.refPanX === 'number') refPanX = s.refPanX;
+      if (typeof s.refPanY === 'number') refPanY = s.refPanY;
+      setRefZoom(typeof s.refZoom === 'number' ? s.refZoom : 1);
       if (s.offset !== undefined && s.offset !== null && s.offset !== '') offsetInput.value = s.offset;
       if (typeof s.ownLoop === 'boolean') ownLoopToggle.checked = s.ownLoop;
       if (s.referenceMode === 'youtube') switchMode('youtube');
@@ -712,6 +756,65 @@
     ytVideoWrapper.classList.toggle('mirrored', mirrored);
   }
   refMirrorToggle.addEventListener('change', () => { applyRefMirror(); saveSettings(); });
+
+  // ---------- reference video zoom & pan ----------
+  function applyRefZoomTransform() {
+    const transform = `translate(${refPanX}px, ${refPanY}px) scale(${refZoom})`;
+    refZoomInners.forEach(el => { el.style.transform = transform; });
+  }
+  function clampRefPan() {
+    const rect = containerRef.getBoundingClientRect();
+    const maxX = rect.width * (refZoom - 1) / 2;
+    const maxY = rect.height * (refZoom - 1) / 2;
+    refPanX = Math.max(-maxX, Math.min(maxX, refPanX));
+    refPanY = Math.max(-maxY, Math.min(maxY, refPanY));
+  }
+  function updateRefZoomDraggerState() {
+    refZoomDragger.classList.toggle('active', refZoom > 1);
+  }
+  function setRefZoom(zoom) {
+    refZoom = Math.max(1, Math.min(3, zoom));
+    refZoomInput.value = String(Math.round(refZoom * 100));
+    refZoomValue.textContent = `${Math.round(refZoom * 100)}%`;
+    clampRefPan();
+    applyRefZoomTransform();
+    updateRefZoomDraggerState();
+  }
+  refZoomInput.addEventListener('input', () => setRefZoom(Number(refZoomInput.value) / 100));
+  refZoomInput.addEventListener('change', saveSettings);
+  refZoomInBtn.addEventListener('click', () => { setRefZoom(refZoom + 0.1); saveSettings(); });
+  refZoomOutBtn.addEventListener('click', () => { setRefZoom(refZoom - 0.1); saveSettings(); });
+  refZoomResetBtn.addEventListener('click', () => {
+    refPanX = 0;
+    refPanY = 0;
+    setRefZoom(1);
+    saveSettings();
+  });
+
+  refZoomDragger.addEventListener('pointerdown', (e) => {
+    isDraggingRef = true;
+    dragStartX = e.clientX;
+    dragStartY = e.clientY;
+    dragStartPanX = refPanX;
+    dragStartPanY = refPanY;
+    refZoomDragger.classList.add('dragging');
+    refZoomDragger.setPointerCapture(e.pointerId);
+  });
+  refZoomDragger.addEventListener('pointermove', (e) => {
+    if (!isDraggingRef) return;
+    refPanX = dragStartPanX + (e.clientX - dragStartX);
+    refPanY = dragStartPanY + (e.clientY - dragStartY);
+    clampRefPan();
+    applyRefZoomTransform();
+  });
+  function endRefDrag() {
+    if (!isDraggingRef) return;
+    isDraggingRef = false;
+    refZoomDragger.classList.remove('dragging');
+    saveSettings();
+  }
+  refZoomDragger.addEventListener('pointerup', endRefDrag);
+  refZoomDragger.addEventListener('pointercancel', endRefDrag);
 
   // ---------- compare mode: side-by-side vs. overlay vs. swipe ----------
   function updateOverlayOpacityLabel() {
