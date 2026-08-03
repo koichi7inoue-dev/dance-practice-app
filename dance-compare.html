@@ -37,7 +37,7 @@
     color: var(--text);
     display: flex;
     justify-content: center;
-    padding: 24px 16px 60px;
+    padding: 24px 16px 100px;
   }
   .wrap {
     width: 100%;
@@ -147,11 +147,16 @@
   .tab-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
   .source-block.hidden { display: none; }
   .video-stage {
-    position: relative;
+    position: sticky;
+    top: 0;
+    z-index: 20;
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 16px;
     margin-bottom: 4px;
+    background: var(--bg);
+    padding-top: 8px;
+    padding-bottom: 8px;
   }
   @media (max-width: 860px) {
     .video-stage { grid-template-columns: 1fr; }
@@ -321,6 +326,24 @@
     text-decoration: none;
   }
   .sync-panel { text-align: left; }
+  .floating-controls {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 30;
+    display: flex;
+    gap: 8px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 8px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+  }
+  .floating-controls button {
+    border-radius: 999px;
+    padding: 10px 18px;
+  }
   .status { font-size: 13px; color: var(--muted); margin-top: 8px; }
 </style>
 </head>
@@ -356,7 +379,7 @@
     <p class="section-title">お手本のズーム</p>
     <div class="row">
       <button class="secondary" id="ref-zoom-out-btn">－</button>
-      <input type="range" id="ref-zoom-input" min="100" max="300" step="10" value="100" />
+      <input type="range" id="ref-zoom-input" min="50" max="300" step="10" value="100" />
       <button class="secondary" id="ref-zoom-in-btn">＋</button>
       <span class="opacity-value" id="ref-zoom-value">100%</span>
       <button class="secondary" id="ref-zoom-reset-btn">リセット</button>
@@ -542,6 +565,12 @@
   </div>
 
   <div class="status" id="status">お手本動画を読み込み、カメラで自分の動きを録画して比較しましょう。</div>
+</div>
+
+<div class="floating-controls" id="floating-controls">
+  <button id="mini-sync-play-btn" title="同時再生">▶</button>
+  <button id="mini-sync-pause-btn" class="secondary" title="一時停止">⏸</button>
+  <button id="mini-sync-reset-btn" class="secondary" title="両方を先頭に戻す">⏮</button>
 </div>
 
 <script>
@@ -764,8 +793,10 @@
   }
   function clampRefPan() {
     const rect = containerRef.getBoundingClientRect();
-    const maxX = rect.width * (refZoom - 1) / 2;
-    const maxY = rect.height * (refZoom - 1) / 2;
+    // Below/at 100% the video no longer overflows its container, so there's
+    // nothing to pan to reveal; lock panning to 0 in that case.
+    const maxX = Math.max(0, rect.width * (refZoom - 1) / 2);
+    const maxY = Math.max(0, rect.height * (refZoom - 1) / 2);
     refPanX = Math.max(-maxX, Math.min(maxX, refPanX));
     refPanY = Math.max(-maxY, Math.min(maxY, refPanY));
   }
@@ -773,7 +804,7 @@
     refZoomDragger.classList.toggle('active', refZoom > 1);
   }
   function setRefZoom(zoom) {
-    refZoom = Math.max(1, Math.min(3, zoom));
+    refZoom = Math.max(0.5, Math.min(3, zoom));
     refZoomInput.value = String(Math.round(refZoom * 100));
     refZoomValue.textContent = `${Math.round(refZoom * 100)}%`;
     clampRefPan();
@@ -1439,6 +1470,12 @@
   syncPlayBtn.addEventListener('click', syncPlay);
   syncPauseBtn.addEventListener('click', syncPause);
   syncResetBtn.addEventListener('click', syncReset);
+
+  // Compact controls that stay fixed on screen so playback can be driven
+  // without scrolling down to the full sync-controls panel.
+  document.getElementById('mini-sync-play-btn').addEventListener('click', syncPlay);
+  document.getElementById('mini-sync-pause-btn').addEventListener('click', syncPause);
+  document.getElementById('mini-sync-reset-btn').addEventListener('click', syncReset);
 
   function stepFrame(direction) {
     const delta = direction * FRAME_STEP;
