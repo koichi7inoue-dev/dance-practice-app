@@ -1682,10 +1682,26 @@
     recordings.forEach(r => URL.revokeObjectURL(r.url));
   });
 
+  // File selections and recordings never persist across reloads (see the
+  // recording-list hint), so on every fresh load there's nothing to clobber:
+  // default to the bundled sample videos unless the saved settings already
+  // point the reference side at a YouTube video.
+  function loadSampleVideos() {
+    if (referenceMode === 'file' && !refFileVideo.src) {
+      refFileVideo.src = 'sample-videos/sample-model.mp4';
+      refPlaceholder.classList.add('hidden');
+    }
+    if (recordings.length === 0) {
+      addRecording('サンプル_自分の動き.mp4', 'sample-videos/sample-mine.mp4');
+    }
+    setStatus('サンプル動画を読み込みました。自由に操作を試したら、お手本動画や自分の動画を読み込み直して練習できます。');
+  }
+
   loadSettings();
   renderRecordingList();
   loadPresets();
   renderPresetList();
+  loadSampleVideos();
 })();
 </script>
 </body>
