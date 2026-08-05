@@ -168,6 +168,10 @@
   .overlay-opacity-row.hidden, .swipe-split-row.hidden { display: none; }
   .overlay-opacity-row input[type="range"], .swipe-split-row input[type="range"] { flex: 1; min-width: 160px; }
   .overlay-opacity-row .opacity-value, .swipe-split-row .split-value { font-size: 13px; color: var(--muted); min-width: 42px; text-align: right; }
+  .seek-row { align-items: center; gap: 8px; }
+  .seek-row input[type="range"] { flex: 1; min-width: 120px; }
+  .seek-row input[type="range"]:disabled { opacity: 0.4; }
+  .seek-time { font-size: 12px; color: var(--muted); min-width: 38px; text-align: center; }
   .swipe-divider {
     position: absolute;
     top: 0;
@@ -551,6 +555,24 @@
     </div>
     <p class="hint">お手本動画と、録画リストから読み込んだ自分の動画を同時に再生・一時停止できます。コマ送りは約1/30秒単位の目安で、上で選んだ対象のみ動きます。</p>
 
+    <div class="field" style="margin-top: 14px;">
+      <label for="ref-seek-input">お手本のシーク</label>
+      <div class="row seek-row">
+        <span class="seek-time" id="ref-seek-current">0:00</span>
+        <input type="range" id="ref-seek-input" min="0" max="0" step="0.1" value="0" />
+        <span class="seek-time" id="ref-seek-duration">0:00</span>
+      </div>
+    </div>
+    <div class="field" style="margin-top: 10px;">
+      <label for="own-seek-input">自分の動画のシーク</label>
+      <div class="row seek-row">
+        <span class="seek-time" id="own-seek-current">0:00</span>
+        <input type="range" id="own-seek-input" min="0" max="0" step="0.1" value="0" disabled />
+        <span class="seek-time" id="own-seek-duration">0:00</span>
+      </div>
+      <p class="hint" id="own-seek-hint">録画リストから自分の動画を読み込むとシークできます。</p>
+    </div>
+
     <div class="row" style="margin-top: 12px; align-items: flex-end;">
       <div class="field">
         <label for="offset-input">自分の動画の開始オフセット（秒）</label>
@@ -681,6 +703,14 @@
   const frameTargetRefBtn = document.getElementById('frame-target-ref-btn');
   const frameTargetOwnBtn = document.getElementById('frame-target-own-btn');
   let frameStepTarget = 'both'; // 'both' | 'ref' | 'own'
+  const refSeekInput = document.getElementById('ref-seek-input');
+  const refSeekCurrent = document.getElementById('ref-seek-current');
+  const refSeekDuration = document.getElementById('ref-seek-duration');
+  const ownSeekInput = document.getElementById('own-seek-input');
+  const ownSeekCurrent = document.getElementById('own-seek-current');
+  const ownSeekDuration = document.getElementById('own-seek-duration');
+  let isDraggingRefSeek = false;
+  let isDraggingOwnSeek = false;
   const offsetInput = document.getElementById('offset-input');
   const offsetMinusBtn = document.getElementById('offset-minus-btn');
   const offsetPlusBtn = document.getElementById('offset-plus-btn');
@@ -993,10 +1023,54 @@
     if (referenceMode === 'youtube') return (ytPlayer && ytPlayer.getCurrentTime) ? ytPlayer.getCurrentTime() : 0;
     return refFileVideo.currentTime || 0;
   }
+  function refGetDuration() {
+    if (referenceMode === 'youtube') return (ytPlayer && ytPlayer.getDuration) ? ytPlayer.getDuration() : 0;
+    return refFileVideo.duration || 0;
+  }
   function refSetRate(rate) {
     if (referenceMode === 'youtube') { if (ytPlayer && ytPlayer.setPlaybackRate) ytPlayer.setPlaybackRate(rate); }
     else { refFileVideo.playbackRate = rate; }
   }
+
+  // ---------- seek bars ----------
+  function updateSeekBars() {
+    if (!isDraggingRefSeek) {
+      const refDur = refGetDuration();
+      const refCur = refGetCurrentTime();
+      refSeekInput.max = String(refDur || 0);
+      refSeekInput.value = String(refCur || 0);
+      refSeekCurrent.textContent = formatTime(refCur);
+      refSeekDuration.textContent = formatTime(refDur);
+    }
+    if (!isDraggingOwnSeek) {
+      const ownPlayable = ownMode === 'playback' && isFinite(ownVideo.duration);
+      const ownDur = ownPlayable ? ownVideo.duration : 0;
+      const ownCur = ownPlayable ? ownVideo.currentTime : 0;
+      ownSeekInput.max = String(ownDur || 0);
+      ownSeekInput.value = String(ownCur || 0);
+      ownSeekInput.disabled = !ownPlayable;
+      ownSeekCurrent.textContent = formatTime(ownCur);
+      ownSeekDuration.textContent = formatTime(ownDur);
+    }
+  }
+  setInterval(updateSeekBars, 200);
+
+  refSeekInput.addEventListener('input', () => {
+    isDraggingRefSeek = true;
+    const t = Number(refSeekInput.value);
+    refSeekCurrent.textContent = formatTime(t);
+    safely(() => refSeek(t));
+  });
+  refSeekInput.addEventListener('change', () => { isDraggingRefSeek = false; });
+
+  ownSeekInput.addEventListener('input', () => {
+    if (ownMode !== 'playback') return;
+    isDraggingOwnSeek = true;
+    const t = Number(ownSeekInput.value);
+    ownSeekCurrent.textContent = formatTime(t);
+    safely(() => { ownVideo.currentTime = t; });
+  });
+  ownSeekInput.addEventListener('change', () => { isDraggingOwnSeek = false; });
 
   // ---------- A-B loop watcher (works for both file & youtube; own video follows the ref's loop) ----------
   setInterval(() => {
