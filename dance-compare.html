@@ -541,7 +541,15 @@
       <button id="frame-back-btn" class="secondary">◀ 1コマ戻す</button>
       <button id="frame-forward-btn" class="secondary">1コマ進む ▶</button>
     </div>
-    <p class="hint">お手本動画と、録画リストから読み込んだ自分の動画を同時に再生・一時停止できます。コマ送りは約1/30秒単位の目安です。</p>
+    <div class="row" style="margin-top: 8px; align-items: center;">
+      <label style="margin: 0; font-size: 13px; color: var(--muted);">コマ送りの対象:</label>
+      <div class="tab-row" style="margin: 0;">
+        <button class="tab-btn active" id="frame-target-both-btn" data-target="both">両方</button>
+        <button class="tab-btn" id="frame-target-ref-btn" data-target="ref">お手本のみ</button>
+        <button class="tab-btn" id="frame-target-own-btn" data-target="own">自分のみ</button>
+      </div>
+    </div>
+    <p class="hint">お手本動画と、録画リストから読み込んだ自分の動画を同時に再生・一時停止できます。コマ送りは約1/30秒単位の目安で、上で選んだ対象のみ動きます。</p>
 
     <div class="row" style="margin-top: 12px; align-items: flex-end;">
       <div class="field">
@@ -553,6 +561,7 @@
         </div>
       </div>
       <button class="secondary" id="capture-offset-btn">現在のズレを記憶</button>
+      <button class="secondary" id="clear-offset-btn">オフセットをクリア</button>
     </div>
     <p class="hint">「両方を先頭に戻す」を押すと、お手本は区間ループの開始位置(A)（未設定なら0:00）に戻ります。自分の動画は、下の「区間ループを自分の動画にも適用する」がONならA＋この秒数、OFFなら0:00＋この秒数の位置に戻ります（プラス=自分が遅れて開始／マイナス=自分が早く開始）。両方の動画を手で動きが合う位置まで動かしてから「現在のズレを記憶」を押すと自動入力されます。</p>
 
@@ -668,10 +677,15 @@
   const syncResetBtn = document.getElementById('sync-reset-btn');
   const frameBackBtn = document.getElementById('frame-back-btn');
   const frameForwardBtn = document.getElementById('frame-forward-btn');
+  const frameTargetBothBtn = document.getElementById('frame-target-both-btn');
+  const frameTargetRefBtn = document.getElementById('frame-target-ref-btn');
+  const frameTargetOwnBtn = document.getElementById('frame-target-own-btn');
+  let frameStepTarget = 'both'; // 'both' | 'ref' | 'own'
   const offsetInput = document.getElementById('offset-input');
   const offsetMinusBtn = document.getElementById('offset-minus-btn');
   const offsetPlusBtn = document.getElementById('offset-plus-btn');
   const captureOffsetBtn = document.getElementById('capture-offset-btn');
+  const clearOffsetBtn = document.getElementById('clear-offset-btn');
   const ownLoopToggle = document.getElementById('own-loop-toggle');
   const statusEl = document.getElementById('status');
 
@@ -730,7 +744,8 @@
         gridOverlay: gridOverlayToggle.checked,
         refZoom,
         refPanX,
-        refPanY
+        refPanY,
+        frameStepTarget
       }));
     } catch (e) {}
   }
@@ -757,6 +772,7 @@
       if (typeof s.refPanX === 'number') refPanX = s.refPanX;
       if (typeof s.refPanY === 'number') refPanY = s.refPanY;
       setRefZoom(typeof s.refZoom === 'number' ? s.refZoom : 1);
+      setFrameStepTarget(s.frameStepTarget === 'ref' || s.frameStepTarget === 'own' ? s.frameStepTarget : 'both');
       if (s.offset !== undefined && s.offset !== null && s.offset !== '') offsetInput.value = s.offset;
       if (typeof s.ownLoop === 'boolean') ownLoopToggle.checked = s.ownLoop;
       if (s.referenceMode === 'youtube') switchMode('youtube');
@@ -1477,17 +1493,31 @@
   document.getElementById('mini-sync-pause-btn').addEventListener('click', syncPause);
   document.getElementById('mini-sync-reset-btn').addEventListener('click', syncReset);
 
+  function setFrameStepTarget(target) {
+    frameStepTarget = target;
+    frameTargetBothBtn.classList.toggle('active', target === 'both');
+    frameTargetRefBtn.classList.toggle('active', target === 'ref');
+    frameTargetOwnBtn.classList.toggle('active', target === 'own');
+  }
+  frameTargetBothBtn.addEventListener('click', () => { setFrameStepTarget('both'); saveSettings(); });
+  frameTargetRefBtn.addEventListener('click', () => { setFrameStepTarget('ref'); saveSettings(); });
+  frameTargetOwnBtn.addEventListener('click', () => { setFrameStepTarget('own'); saveSettings(); });
+
   function stepFrame(direction) {
     const delta = direction * FRAME_STEP;
-    safely(() => {
-      refPause();
-      refSeek(Math.max(0, refGetCurrentTime() + delta));
-    });
-    safely(() => {
-      if (ownMode !== 'playback') return;
-      ownVideo.pause();
-      ownVideo.currentTime = Math.max(0, ownVideo.currentTime + delta);
-    });
+    if (frameStepTarget === 'both' || frameStepTarget === 'ref') {
+      safely(() => {
+        refPause();
+        refSeek(Math.max(0, refGetCurrentTime() + delta));
+      });
+    }
+    if (frameStepTarget === 'both' || frameStepTarget === 'own') {
+      safely(() => {
+        if (ownMode !== 'playback') return;
+        ownVideo.pause();
+        ownVideo.currentTime = Math.max(0, ownVideo.currentTime + delta);
+      });
+    }
   }
   frameBackBtn.addEventListener('click', () => stepFrame(-1));
   frameForwardBtn.addEventListener('click', () => stepFrame(1));
@@ -1546,6 +1576,12 @@
     offsetInput.value = (ownT - refT).toFixed(2);
     saveSettings();
     setStatus(`ズレを ${offsetInput.value} 秒として記憶しました。`);
+  });
+
+  clearOffsetBtn.addEventListener('click', () => {
+    offsetInput.value = '0';
+    saveSettings();
+    setStatus('オフセットをクリアしました。');
   });
 
   // ---------- init ----------
