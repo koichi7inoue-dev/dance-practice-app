@@ -984,9 +984,7 @@
         },
         onStateChange: (event) => {
           if (event.data === YT.PlayerState.ENDED && loopToggle.checked) {
-            const startSec = parseTime(startInput.value) || 0;
-            ytPlayer.seekTo(startSec, true);
-            ytPlayer.playVideo();
+            performLoopReset(parseTime(startInput.value) || 0);
           }
         }
       }
@@ -1073,18 +1071,17 @@
   ownSeekInput.addEventListener('change', () => { isDraggingOwnSeek = false; });
 
   // ---------- A-B loop watcher (works for both file & youtube; own video follows the ref's loop) ----------
-  setInterval(() => {
-    if (!loopToggle.checked) return;
-    const endSec = parseTime(endInput.value);
-    if (endSec === null) return;
-    const startSec = parseTime(startInput.value) || 0;
-
-    const refHasContent = referenceMode === 'file' ? !!refFileVideo.src : !!ytPlayer;
-    if (!refHasContent) return;
-    const refPlaying = referenceMode === 'file' ? !refFileVideo.paused : true;
-    if (!refPlaying || refGetCurrentTime() < endSec) return;
-
-    try { refSeek(startSec); } catch (e) { console.error(e); }
+  // Shared by both the interior-B polling loop below and the natural
+  // end-of-video handlers (used when B is left unset, per the "Bを未設定の
+  // ままにすると動画の最後まで...ループします" hint).
+  function performLoopReset(startSec) {
+    try {
+      refSeek(startSec);
+      // The natural end-of-video handlers fire after playback has already
+      // stopped, so seeking alone won't resume it; explicitly resume here
+      // (a harmless no-op for the still-playing interior-loop-point case).
+      refPlay();
+    } catch (e) { console.error(e); }
     if (ownMode === 'playback') {
       try {
         const offset = getOffset();
@@ -1098,7 +1095,29 @@
         ownVideo.play();
       } catch (e) { console.error(e); }
     }
+  }
+
+  // Interior loop point (B explicitly set, before the video's natural end).
+  setInterval(() => {
+    if (!loopToggle.checked) return;
+    const endSec = parseTime(endInput.value);
+    if (endSec === null) return;
+    const startSec = parseTime(startInput.value) || 0;
+
+    const refHasContent = referenceMode === 'file' ? !!refFileVideo.src : !!ytPlayer;
+    if (!refHasContent) return;
+    const refPlaying = referenceMode === 'file' ? !refFileVideo.paused : true;
+    if (!refPlaying || refGetCurrentTime() < endSec) return;
+
+    performLoopReset(startSec);
   }, 250);
+
+  // Natural end of video (B left unset, so the video plays to its own end
+  // before looping back to A — or to 0:00 if A is unset too).
+  refFileVideo.addEventListener('ended', () => {
+    if (!loopToggle.checked) return;
+    performLoopReset(parseTime(startInput.value) || 0);
+  });
 
   setStartBtn.addEventListener('click', () => { startInput.value = formatTime(refGetCurrentTime()); saveSettings(); });
   setEndBtn.addEventListener('click', () => { endInput.value = formatTime(refGetCurrentTime()); saveSettings(); });
