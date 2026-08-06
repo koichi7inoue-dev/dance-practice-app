@@ -377,6 +377,29 @@
     padding: 10px 18px;
   }
   .status { font-size: 13px; color: var(--muted); margin-top: 8px; }
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    z-index: 1000;
+  }
+  .modal-overlay.hidden { display: none; }
+  .modal-box {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 28px 24px;
+    max-width: 360px;
+    width: 100%;
+    text-align: center;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  }
+  .modal-box p { margin: 0 0 20px; font-size: 15px; line-height: 1.6; color: var(--text); white-space: pre-line; }
+  .modal-box button { width: 100%; }
 </style>
 </head>
 <body>
@@ -635,6 +658,13 @@
   <p class="contact-footer">お問い合わせ: <a href="mailto:happy1st7i@gmail.com">happy1st7i@gmail.com</a></p>
 </div>
 
+<div class="modal-overlay hidden" id="pro-modal-overlay">
+  <div class="modal-box">
+    <p id="pro-modal-message"></p>
+    <button id="pro-modal-close-btn">閉じる</button>
+  </div>
+</div>
+
 <div class="floating-controls" id="floating-controls">
   <button id="mini-sync-play-btn" title="同時再生">▶</button>
   <button id="mini-sync-pause-btn" class="secondary" title="一時停止">⏸</button>
@@ -728,6 +758,9 @@
   const proBadge = document.getElementById('pro-badge');
   const proUpsellRow = document.getElementById('pro-upsell-row');
   const restorePurchaseBtn = document.getElementById('restore-purchase-btn');
+  const proModalOverlay = document.getElementById('pro-modal-overlay');
+  const proModalMessage = document.getElementById('pro-modal-message');
+  const proModalCloseBtn = document.getElementById('pro-modal-close-btn');
   const ownPlaceholder = document.getElementById('own-placeholder');
   const ownSpeedSelect = document.getElementById('own-speed-select');
 
@@ -1372,6 +1405,18 @@
     proUpsellRow.classList.toggle('hidden', pro);
   }
 
+  function showProModal(message) {
+    proModalMessage.textContent = message;
+    proModalOverlay.classList.remove('hidden');
+  }
+  function hideProModal() {
+    proModalOverlay.classList.add('hidden');
+  }
+  proModalCloseBtn.addEventListener('click', hideProModal);
+  proModalOverlay.addEventListener('click', (e) => {
+    if (e.target === proModalOverlay) hideProModal();
+  });
+
   async function verifySession(sessionId) {
     try {
       const res = await fetch(`${WORKER_URL}/verify?session_id=${encodeURIComponent(sessionId)}`);
@@ -1380,6 +1425,7 @@
         saveLicense({ unlocked: true, email: data.email || null });
         renderProUI();
         setStatus('Proを解放しました🎉 録画の保存数・長さ制限がなくなりました。');
+        showProModal('Proを解放しました🎉\n録画の保存数・長さ制限がなくなりました。');
       } else {
         setStatus('決済の確認ができませんでした。時間をおいて再度お試しください。');
       }
@@ -1398,6 +1444,7 @@
         saveLicense({ unlocked: true, email: data.email || email });
         renderProUI();
         setStatus('購入を復元し、Proを解放しました🎉');
+        showProModal('購入を復元し、Proを解放しました🎉');
       } else {
         setStatus('このメールアドレスでの購入が見つかりませんでした。');
       }
