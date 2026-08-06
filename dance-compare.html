@@ -872,7 +872,8 @@
       updateSwipeSplitLabel();
       if (typeof s.gridOverlay === 'boolean') gridOverlayToggle.checked = s.gridOverlay;
       applyGridOverlay();
-      setCompareMode(s.compareMode === 'overlay' || s.compareMode === 'swipe' ? s.compareMode : 'side');
+      const canUsePremiumMode = isPro() && (s.compareMode === 'overlay' || s.compareMode === 'swipe');
+      setCompareMode(canUsePremiumMode ? s.compareMode : 'side');
       if (typeof s.refPanX === 'number') refPanX = s.refPanX;
       if (typeof s.refPanY === 'number') refPanY = s.refPanY;
       setRefZoom(typeof s.refZoom === 'number' ? s.refZoom : 1);
@@ -1005,8 +1006,14 @@
     }
   }
   modeSideBySideBtn.addEventListener('click', () => { setCompareMode('side'); saveSettings(); });
-  modeOverlayBtn.addEventListener('click', () => { setCompareMode('overlay'); saveSettings(); });
-  modeSwipeBtn.addEventListener('click', () => { setCompareMode('swipe'); saveSettings(); });
+  modeOverlayBtn.addEventListener('click', () => {
+    if (!isPro()) { setStatus('重ねて表示（オーバーレイ）はProの機能です。アップグレードすると使えるようになります。'); return; }
+    setCompareMode('overlay'); saveSettings();
+  });
+  modeSwipeBtn.addEventListener('click', () => {
+    if (!isPro()) { setStatus('スワイプ分割表示はProの機能です。アップグレードすると使えるようになります。'); return; }
+    setCompareMode('swipe'); saveSettings();
+  });
   overlayOpacityInput.addEventListener('input', () => {
     updateOverlayOpacityLabel();
     applyOverlayOpacity();
@@ -1403,6 +1410,8 @@
     const pro = isPro();
     proBadge.classList.toggle('hidden', !pro);
     proUpsellRow.classList.toggle('hidden', pro);
+    modeOverlayBtn.textContent = '重ねて表示（オーバーレイ）' + (pro ? '' : ' 🔒Pro');
+    modeSwipeBtn.textContent = 'スワイプ分割表示' + (pro ? '' : ' 🔒Pro');
   }
 
   function showProModal(message) {
