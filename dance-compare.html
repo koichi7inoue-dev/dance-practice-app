@@ -128,6 +128,27 @@
     color: var(--text);
   }
   .upload-label:hover { background: rgba(128,128,128,0.1); }
+  .upgrade-link {
+    display: inline-flex;
+    align-items: center;
+    padding: 10px 16px;
+    border-radius: 8px;
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    font-size: 14px;
+    font-weight: 700;
+    text-decoration: none;
+    cursor: pointer;
+  }
+  .upgrade-link:hover { background: rgba(255,0,0,0.08); }
+  .pro-badge {
+    color: var(--accent);
+    font-weight: 700;
+    font-size: 12px;
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+    padding: 2px 8px;
+  }
   .visually-hidden {
     position: absolute;
     width: 1px; height: 1px;
@@ -506,10 +527,17 @@
     </div>
 
     <div class="panel" id="panel-reclist">
-      <p class="section-title">録画リスト</p>
+      <div class="row" style="justify-content: space-between; align-items: center;">
+        <p class="section-title" style="margin:0;">録画リスト</p>
+        <span id="pro-badge" class="pro-badge hidden">Pro</span>
+      </div>
       <div class="recording-list" id="recording-list"></div>
       <p class="hint" id="recording-empty-hint">録画・アップロードした動画はまだありません。</p>
       <p class="hint">※このタブを閉じると録画データは消えます。残したい場合はダウンロードしてください。</p>
+      <div class="row" id="pro-upsell-row" style="margin-top: 10px;">
+        <a id="upgrade-link" class="upgrade-link" href="https://buy.stripe.com/fZubJ3d9k51t3kpdi90ZW01" target="_blank" rel="noopener">Proにアップグレード（録画の保存数・長さ無制限）</a>
+        <button class="secondary" id="restore-purchase-btn">購入を復元</button>
+      </div>
     </div>
 
     <div class="panel" id="panel-refspeed">
@@ -626,6 +654,7 @@
   let recordedChunks = [];
   let recordStartTime = 0;
   let recordTimerInterval = null;
+  let recordLimitTimeout = null;
 
   let recordings = []; // {id, name, url, addedAt}
   let activeRecordingId = null;
@@ -696,6 +725,9 @@
 
   const recordingList = document.getElementById('recording-list');
   const recordingEmptyHint = document.getElementById('recording-empty-hint');
+  const proBadge = document.getElementById('pro-badge');
+  const proUpsellRow = document.getElementById('pro-upsell-row');
+  const restorePurchaseBtn = document.getElementById('restore-purchase-btn');
   const ownPlaceholder = document.getElementById('own-placeholder');
   const ownSpeedSelect = document.getElementById('own-speed-select');
 
@@ -1312,6 +1344,79 @@
   camStartBtn.addEventListener('click', startCamera);
   camStopBtn.addEventListener('click', stopCamera);
 
+  // ---------- license / pro ----------
+  const WORKER_URL = 'https://dance-practice-license.koichi7inoue.workers.dev';
+  const LICENSE_KEY = 'dancePracticeProLicense';
+  const FREE_RECORDING_LIMIT = 3;
+  const FREE_RECORDING_SECONDS = 30;
+
+  function loadLicense() {
+    try {
+      const raw = localStorage.getItem(LICENSE_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) { return null; }
+  }
+
+  function saveLicense(data) {
+    try { localStorage.setItem(LICENSE_KEY, JSON.stringify(data)); } catch (e) {}
+  }
+
+  function isPro() {
+    const license = loadLicense();
+    return !!(license && license.unlocked);
+  }
+
+  function renderProUI() {
+    const pro = isPro();
+    proBadge.classList.toggle('hidden', !pro);
+    proUpsellRow.classList.toggle('hidden', pro);
+  }
+
+  async function verifySession(sessionId) {
+    try {
+      const res = await fetch(`${WORKER_URL}/verify?session_id=${encodeURIComponent(sessionId)}`);
+      const data = await res.json();
+      if (data.ok) {
+        saveLicense({ unlocked: true, email: data.email || null });
+        renderProUI();
+        setStatus('Proを解放しました🎉 録画の保存数・長さ制限がなくなりました。');
+      } else {
+        setStatus('決済の確認ができませんでした。時間をおいて再度お試しください。');
+      }
+    } catch (e) {
+      setStatus('Proの確認中にエラーが発生しました: ' + e.message);
+    }
+  }
+
+  async function restorePurchase() {
+    const email = prompt('購入時に使用したメールアドレスを入力してください');
+    if (!email) return;
+    try {
+      const res = await fetch(`${WORKER_URL}/restore?email=${encodeURIComponent(email)}`);
+      const data = await res.json();
+      if (data.ok) {
+        saveLicense({ unlocked: true, email: data.email || email });
+        renderProUI();
+        setStatus('購入を復元し、Proを解放しました🎉');
+      } else {
+        setStatus('このメールアドレスでの購入が見つかりませんでした。');
+      }
+    } catch (e) {
+      setStatus('復元中にエラーが発生しました: ' + e.message);
+    }
+  }
+
+  function canAddRecording() {
+    if (isPro()) return true;
+    if (recordings.length >= FREE_RECORDING_LIMIT) {
+      setStatus(`無料版は録画を${FREE_RECORDING_LIMIT}件まで保存できます。既存の録画を削除するか、Proにアップグレードしてください。`);
+      return false;
+    }
+    return true;
+  }
+
+  restorePurchaseBtn.addEventListener('click', restorePurchase);
+
   // ---------- recording ----------
   function isRecording() { return !!mediaRecorder && mediaRecorder.state === 'recording'; }
 
@@ -1400,6 +1505,7 @@
 
   function startRecording() {
     if (!cameraStream) return;
+    if (!canAddRecording()) return;
     if (ownMode !== 'live') showLive();
     const loopStartSec = parseTime(startInput.value) || 0;
     refSeek(loopStartSec);
@@ -1430,11 +1536,21 @@
     recordBtn.textContent = '録画停止';
     recordBtn.classList.add('recording');
     setStatus('録画中...');
+
+    if (!isPro()) {
+      recordLimitTimeout = setTimeout(() => {
+        if (isRecording()) {
+          stopRecording();
+          setStatus(`無料版は1件の録画が${FREE_RECORDING_SECONDS}秒までです。Proにアップグレードすると解除できます。`);
+        }
+      }, FREE_RECORDING_SECONDS * 1000);
+    }
   }
 
   function stopRecording() {
     if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
     clearInterval(recordTimerInterval);
+    clearTimeout(recordLimitTimeout);
     recIndicator.classList.add('hidden');
     recordBtn.textContent = '録画開始';
     recordBtn.classList.remove('recording');
@@ -1446,9 +1562,25 @@
   ownFileInput.addEventListener('change', () => {
     const file = ownFileInput.files[0];
     if (!file) return;
+    if (!canAddRecording()) { ownFileInput.value = ''; return; }
     const url = URL.createObjectURL(file);
-    addRecording(file.name, url);
-    ownFileInput.value = '';
+    if (isPro()) {
+      addRecording(file.name, url);
+      ownFileInput.value = '';
+      return;
+    }
+    const probe = document.createElement('video');
+    probe.preload = 'metadata';
+    probe.onloadedmetadata = () => {
+      if (probe.duration > FREE_RECORDING_SECONDS) {
+        URL.revokeObjectURL(url);
+        setStatus(`無料版は1件の動画が${FREE_RECORDING_SECONDS}秒までです。Proにアップグレードすると解除できます。`);
+      } else {
+        addRecording(file.name, url);
+      }
+      ownFileInput.value = '';
+    };
+    probe.src = url;
   });
 
   // ---------- recording list ----------
@@ -1711,6 +1843,13 @@
   loadPresets();
   renderPresetList();
   loadSampleVideos();
+
+  renderProUI();
+  const initialSessionId = new URLSearchParams(location.search).get('session_id');
+  if (initialSessionId) {
+    verifySession(initialSessionId);
+    history.replaceState(null, '', location.pathname + location.hash);
+  }
 })();
 </script>
 </body>

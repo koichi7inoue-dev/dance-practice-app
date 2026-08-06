@@ -1,0 +1,12 @@
+name = "dance-practice-license"
+main = "src/index.js"
+compatibility_date = "2024-01-01"
+
+[vars]
+# 本番ドメインに合わせて変更してください（例: "https://koichi7inoue-dev.github.io"）
+ALLOWED_ORIGIN = "https://dance-compare.com"
+# Stripeダッシュボードで発行したPayment LinkのID（plink_xxx）に置き換えてください
+PRO_PAYMENT_LINK_ID = "plink_1U1Fw5PBddHoYi3dcwhnRzRb"
+
+# シークレットはリポジトリに含めず、以下のコマンドで別途設定します:
+#   wrangler secret put STRIPE_SECRET_KEY
