@@ -187,6 +187,23 @@
     transition: transform 0.08s;
   }
   .beat-count-overlay .beat-count-number.beat { transform: scale(1.12); }
+  .record-countdown-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    background: rgba(0, 0, 0, 0.4);
+    z-index: 5;
+  }
+  .record-countdown-overlay.hidden { display: none; }
+  .record-countdown-overlay .record-countdown-number {
+    font-size: min(35vw, 160px);
+    font-weight: 800;
+    color: #fff;
+    text-shadow: 0 2px 12px rgba(0, 0, 0, 0.7);
+  }
   .visually-hidden {
     position: absolute;
     width: 1px; height: 1px;
@@ -543,6 +560,7 @@
       <div id="own-placeholder" class="placeholder">カメラを開始するか、録画リストから読み込んでください</div>
       <div id="rec-indicator" class="rec-indicator hidden"><span class="rec-dot"></span>REC <span id="rec-timer">0:00</span></div>
       <div id="beat-count-overlay" class="beat-count-overlay hidden"><span id="beat-count-number" class="beat-count-number">1</span></div>
+      <div id="record-countdown-overlay" class="record-countdown-overlay hidden"><span id="record-countdown-number" class="record-countdown-number"></span></div>
     </div>
   </div>
 
@@ -585,6 +603,10 @@
       </div>
       <div class="row">
         <button id="record-btn" disabled>録画開始</button>
+        <div class="field" style="flex: 0 0 auto;">
+          <label for="record-countdown-input" style="margin: 0;">開始までの秒数</label>
+          <input type="number" id="record-countdown-input" min="0" max="10" step="1" value="3" style="width: 60px; text-align: center;" />
+        </div>
         <label class="upload-label">
           動画をアップロード
           <input type="file" id="own-file-input" accept="video/*" class="visually-hidden" />
@@ -592,7 +614,7 @@
         <button id="back-to-live-btn" class="secondary hidden">カメラに戻る</button>
       </div>
       <div id="cam-error-box" class="error-box"></div>
-      <p class="hint">「録画開始」を押すと、お手本動画も区間ループの開始位置(A)から自動で同時再生されます。</p>
+      <p class="hint">「録画開始」を押すと、カウントダウンの後にお手本動画も区間ループの開始位置(A)から自動で同時再生されます。カウントダウン中に「キャンセル」を押すと録画は始まりません。秒数を0にするとすぐに録画が始まります。</p>
     </div>
 
     <div class="panel" id="panel-ab">
@@ -850,6 +872,11 @@
   const recIndicator = document.getElementById('rec-indicator');
   const recTimer = document.getElementById('rec-timer');
   const recordBtn = document.getElementById('record-btn');
+  const recordCountdownInput = document.getElementById('record-countdown-input');
+  const recordCountdownOverlay = document.getElementById('record-countdown-overlay');
+  const recordCountdownNumber = document.getElementById('record-countdown-number');
+  let recordCountdownTimer = null;
+  let recordCountdownActive = false;
   const ownFileInput = document.getElementById('own-file-input');
 
   const recordingList = document.getElementById('recording-list');
@@ -954,7 +981,8 @@
         beatOffset: beatOffsetInput.value,
         beatCountEnabled: beatCountToggle.checked,
         beatCountCycle: beatCountCycleInput.value,
-        offbeatEnabled: offbeatToggle.checked
+        offbeatEnabled: offbeatToggle.checked,
+        recordCountdown: recordCountdownInput.value
       }));
     } catch (e) {}
   }
@@ -989,6 +1017,7 @@
       if (typeof s.beatCountEnabled === 'boolean') beatCountToggle.checked = s.beatCountEnabled;
       if (s.beatCountCycle !== undefined && s.beatCountCycle !== null && s.beatCountCycle !== '') beatCountCycleInput.value = s.beatCountCycle;
       if (typeof s.offbeatEnabled === 'boolean') offbeatToggle.checked = s.offbeatEnabled;
+      if (s.recordCountdown !== undefined && s.recordCountdown !== null && s.recordCountdown !== '') recordCountdownInput.value = s.recordCountdown;
       if (s.offset !== undefined && s.offset !== null && s.offset !== '') offsetInput.value = s.offset;
       if (typeof s.ownLoop === 'boolean') ownLoopToggle.checked = s.ownLoop;
       if (s.referenceMode === 'youtube') switchMode('youtube');
@@ -1737,6 +1766,7 @@
   }
 
   function stopCamera() {
+    if (recordCountdownActive) cancelRecordCountdown();
     if (isRecording()) stopRecording();
     if (cameraStream) { cameraStream.getTracks().forEach(t => t.stop()); cameraStream = null; }
     if (ownMode === 'live') clearOwnVideoToEmpty();
@@ -1977,7 +2007,70 @@
     recordBtn.classList.remove('recording');
   }
 
-  recordBtn.addEventListener('click', () => { isRecording() ? stopRecording() : startRecording(); });
+  function playCountdownBeep() {
+    if (!metronomeAudioCtx) metronomeAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const ctx = metronomeAudioCtx;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.frequency.value = 880;
+    gain.gain.setValueAtTime(0.3, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.15);
+  }
+
+  function cancelRecordCountdown() {
+    if (recordCountdownTimer) {
+      clearInterval(recordCountdownTimer);
+      recordCountdownTimer = null;
+    }
+    recordCountdownActive = false;
+    recordCountdownOverlay.classList.add('hidden');
+    recordBtn.textContent = '録画開始';
+    recordBtn.classList.remove('recording');
+    setStatus('録画を中止しました。');
+  }
+
+  function beginRecordCountdown() {
+    if (!cameraStream) return;
+    if (!canAddRecording()) return;
+    const seconds = Math.max(0, Math.floor(Number(recordCountdownInput.value)) || 0);
+    if (seconds <= 0) {
+      startRecording();
+      return;
+    }
+    if (ownMode !== 'live') showLive();
+    recordCountdownActive = true;
+    recordBtn.textContent = 'キャンセル';
+    recordBtn.classList.add('recording');
+    let remaining = seconds;
+    recordCountdownOverlay.classList.remove('hidden');
+    recordCountdownNumber.textContent = String(remaining);
+    setStatus(`${remaining}秒後に録画を開始します...`);
+    playCountdownBeep();
+    recordCountdownTimer = setInterval(() => {
+      remaining -= 1;
+      if (remaining <= 0) {
+        clearInterval(recordCountdownTimer);
+        recordCountdownTimer = null;
+        recordCountdownOverlay.classList.add('hidden');
+        recordCountdownActive = false;
+        startRecording();
+      } else {
+        recordCountdownNumber.textContent = String(remaining);
+        setStatus(`${remaining}秒後に録画を開始します...`);
+        playCountdownBeep();
+      }
+    }, 1000);
+  }
+
+  recordBtn.addEventListener('click', () => {
+    if (recordCountdownActive) { cancelRecordCountdown(); return; }
+    isRecording() ? stopRecording() : beginRecordCountdown();
+  });
+  recordCountdownInput.addEventListener('change', saveSettings);
 
   // ---------- own video: upload ----------
   ownFileInput.addEventListener('change', () => {
