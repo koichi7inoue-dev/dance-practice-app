@@ -3,138 +3,464 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ダンス練習アプリ</title>
+<meta name="description" content="お手本動画と自分の動きを並べて再生・比較しながら練習できるダンス練習アプリ。A-Bループ、BPM検出、メトロノーム同期にも対応。">
+<meta name="theme-color" content="#f6f2ec" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#15100d" media="(prefers-color-scheme: dark)">
+<title>ダンス練習アプリ | お手本と自分を並べて比較</title>
 <style>
   :root {
     color-scheme: light dark;
-    --bg: #f5f5f7;
+    --paper: #f6f2ec;
     --panel: #ffffff;
-    --text: #1d1d1f;
-    --muted: #6e6e73;
-    --accent: #ff0000;
-    --accent-hover: #d60000;
-    --border: #e0e0e0;
+    --panel-line: #e4dbcd;
+    --ink: #18120f;
+    --muted: #6b5d4d;
+    --rec: #ff0000;
+    --rec-dim: #ffe2df;
+    --cue: #b9791c;
+    --cue-dim: #f6e6c4;
+    --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+    --font-mono: "SF Mono", "SFMono-Regular", ui-monospace, "Yu Gothic", Consolas, "Courier New", monospace;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #121212;
-      --panel: #1e1e1e;
-      --text: #f0f0f0;
-      --muted: #a0a0a5;
-      --border: #333;
+      --paper: #15100d;
+      --panel: #201a16;
+      --panel-line: #3a2f27;
+      --ink: #f3ede6;
+      --muted: #ab9d8d;
+      --rec: #ff3b3b;
+      --rec-dim: #3a1414;
+      --cue: #e8a94a;
+      --cue-dim: #3a2c14;
     }
   }
+
   * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
   body {
     margin: 0;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
-    background: var(--bg);
-    color: var(--text);
-    display: flex;
-    justify-content: center;
-    padding: 32px 16px 60px;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-body);
+    line-height: 1.7;
   }
+  a { color: inherit; }
+  :focus-visible { outline: 2px solid var(--rec); outline-offset: 3px; }
+
   .wrap {
-    width: 100%;
-    max-width: 760px;
+    max-width: 880px;
+    margin: 0 auto;
+    padding: 0 20px;
   }
+
+  /* ---- top bar ---- */
+  .top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 22px 0;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    letter-spacing: 0.04em;
+  }
+  .wordmark { font-weight: 700; color: var(--ink); text-decoration: none; }
+  .top a.open { color: var(--muted); text-decoration: none; border-bottom: 1px solid var(--panel-line); padding-bottom: 1px; }
+  .top a.open:hover { color: var(--rec); border-color: var(--rec); }
+
+  /* ---- hero ---- */
+  .hero { padding: 28px 0 8px; }
   h1 {
-    font-size: 26px;
-    font-weight: 700;
-    margin: 0 0 8px;
+    font-size: clamp(32px, 5.6vw, 52px);
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    line-height: 1.2;
+    margin: 0 0 18px;
+    text-wrap: balance;
   }
+  h1 em { color: var(--rec); font-style: normal; }
   .lede {
     color: var(--muted);
-    font-size: 15px;
+    font-size: 17px;
+    max-width: 46em;
     margin: 0 0 28px;
   }
+  .cta-row { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; margin-bottom: 44px; }
   .cta {
     display: inline-block;
-    background: var(--accent);
+    background: var(--rec);
     color: #fff;
     text-decoration: none;
     font-weight: 700;
-    font-size: 17px;
-    padding: 14px 28px;
-    border-radius: 10px;
-    margin-bottom: 36px;
+    font-size: 16px;
+    padding: 15px 30px;
+    border-radius: 6px;
   }
-  .cta:hover { background: var(--accent-hover); }
-  h2 {
-    font-size: 18px;
-    font-weight: 700;
-    margin: 32px 0 12px;
+  .cta:hover { background: #d60000; }
+  .cta-note { font-size: 13px; color: var(--muted); }
+
+  /* ---- dual video frame ---- */
+  .dual-frame {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 56px;
   }
-  .panel {
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 20px 24px;
-  }
-  ol, ul {
-    margin: 0;
-    padding-left: 22px;
-  }
-  li { margin-bottom: 10px; line-height: 1.6; }
-  li:last-child { margin-bottom: 0; }
-  .steps { counter-reset: step; }
-  code {
-    background: var(--border);
+  .frame {
+    position: relative;
+    aspect-ratio: 4 / 3;
     border-radius: 4px;
-    padding: 1px 6px;
-    font-size: 0.9em;
+    border: 1px solid var(--panel-line);
+    overflow: hidden;
+    background: var(--panel);
   }
-  .footer-link {
-    display: block;
-    margin-top: 32px;
-    text-align: center;
+  .frame-ref .frame-glow { background: radial-gradient(120% 120% at 20% 15%, var(--cue-dim), transparent 60%); }
+  .frame-own .frame-glow { background: radial-gradient(120% 120% at 80% 15%, var(--rec-dim), transparent 60%); }
+  .frame-glow { position: absolute; inset: 0; }
+  .frame-chip {
+    position: absolute; top: 8px; left: 8px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.05em;
+    padding: 3px 7px;
+    background: rgba(0,0,0,0.55);
+    color: #fff;
+    border-radius: 3px;
   }
-  .footer-link a { color: var(--accent); }
-  .contact-footer {
-    text-align: center;
+  .frame-tag {
+    position: absolute; top: 8px; right: 8px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.03em;
+    padding: 3px 7px;
+    background: rgba(0,0,0,0.55);
+    color: #fff;
+    border-radius: 3px;
+  }
+  .frame-tag .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--rec);
+    animation: pulse-dot 1.8s ease-in-out infinite;
+  }
+  .frame-play {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -55%);
+    width: 0; height: 0;
+    border-style: solid;
+    border-width: 12px 0 12px 18px;
+    border-color: transparent transparent transparent var(--ink);
+    opacity: 0.28;
+  }
+  .frame-scrub {
+    position: absolute; left: 10px; right: 10px; bottom: 10px;
+    height: 3px;
+    background: var(--panel-line);
+    border-radius: 2px;
+  }
+  .frame-own .frame-scrub-fill { background: var(--rec); }
+  .frame-ref .frame-scrub-fill { background: var(--cue); }
+  .frame-scrub-fill { position: absolute; top: 0; left: 0; bottom: 0; border-radius: 2px; }
+  .frame-scrub-head {
+    position: absolute; top: 50%; width: 8px; height: 8px;
+    border-radius: 50%; transform: translate(-50%, -50%);
+  }
+  .frame-own .frame-scrub-head { background: var(--rec); }
+  .frame-ref .frame-scrub-head { background: var(--cue); }
+  .frame-sync {
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--muted);
+    letter-spacing: 0.04em;
+  }
+  .sync-dot {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: var(--ink);
+    animation: pulse-dot 1.8s ease-in-out infinite;
+  }
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.3; transform: scale(0.8); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .frame-tag .dot, .sync-dot { animation: none; }
+  }
+  @media (max-width: 560px) {
+    .dual-frame { grid-template-columns: 1fr; }
+    .frame-sync { flex-direction: row; justify-content: center; }
+  }
+
+  /* ---- section scaffolding ---- */
+  section { padding: 8px 0 52px; }
+  .section-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 26px; }
+  .section-num {
+    font-family: var(--font-mono);
     font-size: 12px;
     color: var(--muted);
-    margin-top: 12px;
+    white-space: nowrap;
   }
-  .contact-footer a { color: var(--muted); }
+  h2 {
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    margin: 0;
+    text-wrap: balance;
+  }
+  .rule {
+    border: none;
+    height: 1px;
+    background: repeating-linear-gradient(90deg, var(--panel-line) 0 6px, transparent 6px 12px);
+    margin: 0 0 52px;
+  }
+
+  /* ---- timeline (how it works) ---- */
+  .timeline { position: relative; display: grid; gap: 30px; padding-left: 64px; }
+  .timeline::before {
+    content: '';
+    position: absolute;
+    left: 23px; top: 4px; bottom: 4px;
+    width: 1px;
+    background: repeating-linear-gradient(var(--panel-line) 0 3px, transparent 3px 9px);
+  }
+  .beat-row { position: relative; }
+  .beat-num {
+    position: absolute;
+    left: -64px; top: 0;
+    width: 46px; height: 46px;
+    border-radius: 4px;
+    background: var(--panel);
+    border: 1px solid var(--panel-line);
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--font-mono);
+    font-weight: 700;
+    font-size: 17px;
+    font-variant-numeric: tabular-nums;
+  }
+  .beat-row h3 { margin: 2px 0 6px; font-size: 16px; font-weight: 700; }
+  .beat-row p { margin: 0; color: var(--muted); font-size: 15px; max-width: 52em; }
+
+  /* ---- tool spec grid ---- */
+  .tool-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+    gap: 24px 20px;
+  }
+  .tool { border-top: 2px solid var(--panel-line); padding-top: 12px; }
+  .tool-label {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--rec);
+    margin-bottom: 6px;
+  }
+  .tool p { margin: 0; color: var(--muted); font-size: 14px; }
+
+  /* ---- pricing table ---- */
+  .plan-table {
+    border: 1px solid var(--panel-line);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .plan-row {
+    display: grid;
+    grid-template-columns: 1.3fr 1fr 1fr;
+  }
+  .plan-row + .plan-row { border-top: 1px solid var(--panel-line); }
+  .plan-cell { padding: 14px 16px; font-size: 14px; }
+  .plan-feature { color: var(--muted); }
+  .plan-head .plan-cell {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+    padding-bottom: 10px;
+    padding-top: 16px;
+  }
+  .plan-head .plan-pro { color: var(--rec); font-weight: 700; }
+  .plan-pro { background: var(--rec-dim); font-weight: 600; }
+  .plan-price .plan-pro { font-family: var(--font-mono); }
+  .plan-cta-row { padding: 20px 16px; grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .plan-cta-row .cta { font-size: 14px; padding: 12px 22px; }
+  .plan-cta-note { font-size: 13px; color: var(--muted); margin: 0; }
+  @media (max-width: 560px) {
+    .plan-cell { padding: 12px 10px; font-size: 13px; }
+  }
+
+  /* ---- closing band ---- */
+  .closing {
+    background: var(--panel);
+    border-top: 1px solid var(--panel-line);
+    border-bottom: 1px solid var(--panel-line);
+    padding: 48px 0;
+    text-align: center;
+  }
+  .closing h2 { margin-bottom: 14px; }
+  .closing p { color: var(--muted); margin: 0 0 26px; }
+
+  footer { padding: 28px 0 60px; text-align: center; }
+  .contact { font-size: 13px; color: var(--muted); }
+  .contact a { color: var(--muted); }
+  .contact a:hover { color: var(--rec); }
 </style>
 </head>
 <body>
+
 <div class="wrap">
-  <h1>ダンス練習アプリ</h1>
-  <p class="lede">お手本動画と自分の動きを並べて再生・比較しながら練習できるツールです。サンプル動画が最初から読み込まれているので、開いてすぐ試せます。</p>
-
-  <a class="cta" href="dance-compare.html">アプリを開く →</a>
-
-  <h2>基本の使い方</h2>
-  <div class="panel">
-    <ol class="steps">
-      <li><strong>お手本動画を用意する</strong><br>初回はサンプル動画が自動で読み込まれるので、そのまま操作を試せます。自分の動画に差し替えるには「ファイル」タブから動画ファイルを選ぶか、「YouTube」タブにURLを貼って読み込みます。</li>
-      <li><strong>自分の動きを撮る</strong><br>「カメラ開始」でライブ映像を表示し、「録画開始」でその場を録画するか、あらかじめ撮った動画をアップロードします。録画は一覧から呼び出して見直せます。</li>
-      <li><strong>表示モードを選ぶ</strong><br>「並べて表示」から見比べられます（無料版はこのモードのみ）。「重ねて表示（オーバーレイ）」「スワイプ分割表示」はProで使える表示モードです。グリッド線を表示すると位置合わせがしやすくなります。</li>
-      <li><strong>同時再生で比較する</strong><br>画面下のフローティングボタン、または「同時再生コントロール」から再生・一時停止・両方を先頭に戻すを操作します。お手本・自分それぞれのシークバーで好きな位置に移動でき、「コマ送りの対象」を両方/お手本のみ/自分のみで切り替えれば、片方だけを1コマずつ細かく確認できます。</li>
-      <li><strong>タイミングを合わせる</strong><br>お手本と自分の動画にズレがある場合は「自分の動画の開始オフセット」で調整し、「現在のズレを記憶」で保存できます。調整をやり直したいときは「オフセットをクリア」でリセットできます。</li>
-      <li><strong>繰り返し練習する</strong><br>「区間ループ (A-Bリピート)」で練習したい部分の開始・終了を指定してループ再生し、よく使う区間はプリセットとして名前を付けて保存できます。</li>
-    </ol>
+  <div class="top">
+    <span class="wordmark">DANCE / COMPARE</span>
+    <a class="open" href="dance-compare.html">アプリを開く →</a>
   </div>
 
-  <h2>あると便利な機能</h2>
-  <div class="panel">
-    <ul>
-      <li>お手本・自分それぞれの<strong>再生速度</strong>を個別に調整可能</li>
-      <li>お手本映像の<strong>ズーム・パン</strong>で見たい部分を拡大表示</li>
-      <li>カメラ・録画それぞれの<strong>ミラー表示</strong>切り替え</li>
-      <li>お手本のBPMを検出、またはタップでテンポを設定（メトロノームの再生はPro機能）</li>
-    </ul>
+  <div class="hero">
+    <h1>お手本と自分を、<br><em>同じ画面</em>で並べて練習する。</h1>
+    <p class="lede">お手本動画と自分の動きを並べて再生・比較しながら練習できるツールです。サンプル動画が最初から読み込まれているので、開いてすぐ試せます。</p>
+    <div class="cta-row">
+      <a class="cta" href="dance-compare.html">アプリを開く →</a>
+      <span class="cta-note">インストール不要・ブラウザだけで使えます</span>
+    </div>
+
+    <div class="dual-frame" aria-hidden="true">
+      <div class="frame frame-ref">
+        <div class="frame-glow"></div>
+        <span class="frame-chip">お手本</span>
+        <span class="frame-tag">♩ 128</span>
+        <div class="frame-play"></div>
+        <div class="frame-scrub"><span class="frame-scrub-fill" style="width:38%"></span><span class="frame-scrub-head" style="left:38%"></span></div>
+      </div>
+      <div class="frame-sync">SYNC<span class="sync-dot"></span></div>
+      <div class="frame frame-own">
+        <div class="frame-glow"></div>
+        <span class="frame-chip">自分</span>
+        <span class="frame-tag"><span class="dot"></span>REC</span>
+        <div class="frame-play"></div>
+        <div class="frame-scrub"><span class="frame-scrub-fill" style="width:38%"></span><span class="frame-scrub-head" style="left:38%"></span></div>
+      </div>
+    </div>
   </div>
 
-  <h2>Proプラン</h2>
-  <div class="panel">
-    <p style="margin:0; line-height:1.6;">無料版は録画の同時保存3件・1件30秒まで、表示モードは「並べて表示」のみ、メトロノームの再生はできません。買い切りのProにアップグレードすると、保存数・長さの制限がなくなり、「重ねて表示（オーバーレイ）」「スワイプ分割表示」やメトロノーム再生も使えるようになります。アプリ内の「録画リスト」パネルからアップグレードできます。</p>
-  </div>
+  <section id="how">
+    <div class="section-head">
+      <span class="section-num">01 — 06</span>
+      <h2>基本の使い方</h2>
+    </div>
+    <div class="timeline">
+      <div class="beat-row">
+        <div class="beat-num">1</div>
+        <h3>お手本動画を用意する</h3>
+        <p>初回はサンプル動画が自動で読み込まれるので、そのまま操作を試せます。自分の動画に差し替えるには「ファイル」タブから動画ファイルを選ぶか、「YouTube」タブにURLを貼って読み込みます。</p>
+      </div>
+      <div class="beat-row">
+        <div class="beat-num">2</div>
+        <h3>自分の動きを撮る</h3>
+        <p>「カメラ開始」でライブ映像を表示し、「録画開始」を押すとカウントダウンの後に自動で録画が始まります。あらかじめ撮った動画のアップロードも可能で、録画は一覧から呼び出して見直せます。</p>
+      </div>
+      <div class="beat-row">
+        <div class="beat-num">3</div>
+        <h3>表示モードを選ぶ</h3>
+        <p>「並べて表示」から見比べられます（無料版はこのモードのみ）。「重ねて表示（オーバーレイ）」「スワイプ分割表示」はProで使える表示モードです。グリッド線を表示すると位置合わせがしやすくなります。</p>
+      </div>
+      <div class="beat-row">
+        <div class="beat-num">4</div>
+        <h3>同時再生で比較する</h3>
+        <p>画面下のフローティングボタン、または「同時再生コントロール」から再生・一時停止・両方を先頭に戻すを操作します。お手本・自分それぞれのシークバーで好きな位置に移動でき、「コマ送りの対象」を切り替えれば片方だけを1コマずつ細かく確認できます。</p>
+      </div>
+      <div class="beat-row">
+        <div class="beat-num">5</div>
+        <h3>タイミングを合わせる</h3>
+        <p>お手本と自分の動画にズレがある場合は「自分の動画の開始オフセット」で調整し、「現在のズレを記憶」で保存できます。調整をやり直したいときは「オフセットをクリア」でリセットできます。</p>
+      </div>
+      <div class="beat-row">
+        <div class="beat-num">6</div>
+        <h3>繰り返し練習する</h3>
+        <p>「区間ループ (A-Bリピート)」で練習したい部分の開始・終了を指定してループ再生し、よく使う区間はプリセットとして名前を付けて保存できます。</p>
+      </div>
+    </div>
+  </section>
 
-  <p class="footer-link"><a href="dance-compare.html">アプリを開く →</a></p>
-  <p class="contact-footer">お問い合わせ: <a href="mailto:happy1st7i@gmail.com">happy1st7i@gmail.com</a></p>
+  <hr class="rule">
+
+  <section id="features">
+    <div class="section-head">
+      <span class="section-num">TOOLS</span>
+      <h2>あると便利な機能</h2>
+    </div>
+    <div class="tool-grid">
+      <div class="tool"><span class="tool-label">Speed</span><p>お手本・自分それぞれの再生速度を個別に調整できます。</p></div>
+      <div class="tool"><span class="tool-label">Zoom / Pan</span><p>お手本映像をズーム・パンして見たい部分を拡大表示できます。</p></div>
+      <div class="tool"><span class="tool-label">Mirror</span><p>カメラ・録画それぞれのミラー表示を切り替えられます。</p></div>
+      <div class="tool"><span class="tool-label">Grid</span><p>グリッド線を重ねて、立ち位置や動きの位置合わせがしやすくなります。</p></div>
+      <div class="tool"><span class="tool-label">Countdown</span><p>録画開始前にカウントダウンが入るので、自分でカメラの前まで移動する時間が取れます。</p></div>
+      <div class="tool"><span class="tool-label">Tempo / BPM</span><p>お手本のBPMを自動検出、またはタップでテンポを設定できます（メトロノームの再生はPro機能）。</p></div>
+      <div class="tool"><span class="tool-label">Presets</span><p>よく使うA-Bループ区間を、名前を付けて保存しておけます。</p></div>
+    </div>
+  </section>
+
+  <hr class="rule">
+
+  <section id="pricing">
+    <div class="section-head">
+      <span class="section-num">PLAN</span>
+      <h2>無料版とProプラン</h2>
+    </div>
+    <div class="plan-table">
+      <div class="plan-row plan-head">
+        <div class="plan-cell"></div>
+        <div class="plan-cell">無料</div>
+        <div class="plan-cell plan-pro">Pro</div>
+      </div>
+      <div class="plan-row">
+        <div class="plan-cell plan-feature">表示モード</div>
+        <div class="plan-cell">並べて表示のみ</div>
+        <div class="plan-cell plan-pro">+ オーバーレイ + スワイプ</div>
+      </div>
+      <div class="plan-row">
+        <div class="plan-cell plan-feature">録画の同時保存数</div>
+        <div class="plan-cell">3件まで</div>
+        <div class="plan-cell plan-pro">無制限</div>
+      </div>
+      <div class="plan-row">
+        <div class="plan-cell plan-feature">録画1件の長さ</div>
+        <div class="plan-cell">30秒まで</div>
+        <div class="plan-cell plan-pro">無制限</div>
+      </div>
+      <div class="plan-row">
+        <div class="plan-cell plan-feature">メトロノーム再生</div>
+        <div class="plan-cell">✕（BPM検出・タップ設定は可）</div>
+        <div class="plan-cell plan-pro">✓</div>
+      </div>
+      <div class="plan-row plan-price">
+        <div class="plan-cell plan-feature">料金</div>
+        <div class="plan-cell">無料</div>
+        <div class="plan-cell plan-pro">買い切り（一回のみのお支払い）</div>
+      </div>
+      <div class="plan-row">
+        <div class="plan-cta-row">
+          <p class="plan-cta-note">アプリ内の「録画リスト」パネルからアップグレードできます。</p>
+          <a class="cta" href="dance-compare.html">アプリを開く →</a>
+        </div>
+      </div>
+    </div>
+  </section>
 </div>
+
+<div class="closing">
+  <div class="wrap">
+    <h2>今すぐ、隣に並べて練習を始める。</h2>
+    <p>ブラウザを開くだけ。インストールもアカウント登録も不要です。</p>
+    <a class="cta" href="dance-compare.html">アプリを開く →</a>
+  </div>
+</div>
+
+<footer>
+  <p class="contact">お問い合わせ: <a href="mailto:happy1st7i@gmail.com">happy1st7i@gmail.com</a></p>
+</footer>
+
 </body>
 </html>
