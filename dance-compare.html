@@ -517,6 +517,10 @@
       </div>
     </div>
     <p class="hint">自分の動画（動画B）の上に大きく数字を表示します。「重ねて表示」モードならお手本動画にも重なって見えます。</p>
+    <div class="toggle-row" style="margin-top: 10px;">
+      <input type="checkbox" id="offbeat-toggle" />
+      <label for="offbeat-toggle" style="margin: 0;">裏拍（&amp;）も鳴らす・表示する（1 &amp; 2 &amp; 3 &amp; 4 &amp;）</label>
+    </div>
   </div>
 
   <div class="video-stage" id="video-stage">
@@ -824,6 +828,7 @@
   const beatCountCycleInput = document.getElementById('beat-count-cycle-input');
   const beatCountOverlay = document.getElementById('beat-count-overlay');
   const beatCountNumber = document.getElementById('beat-count-number');
+  const offbeatToggle = document.getElementById('offbeat-toggle');
   let metronomePoller = null;
   let lastBeatIndex = null;
   let metronomeAudioCtx = null;
@@ -948,7 +953,8 @@
         metronomeMuted: metronomeMuteToggle.checked,
         beatOffset: beatOffsetInput.value,
         beatCountEnabled: beatCountToggle.checked,
-        beatCountCycle: beatCountCycleInput.value
+        beatCountCycle: beatCountCycleInput.value,
+        offbeatEnabled: offbeatToggle.checked
       }));
     } catch (e) {}
   }
@@ -982,6 +988,7 @@
       if (s.beatOffset !== undefined && s.beatOffset !== null && s.beatOffset !== '') beatOffsetInput.value = s.beatOffset;
       if (typeof s.beatCountEnabled === 'boolean') beatCountToggle.checked = s.beatCountEnabled;
       if (s.beatCountCycle !== undefined && s.beatCountCycle !== null && s.beatCountCycle !== '') beatCountCycleInput.value = s.beatCountCycle;
+      if (typeof s.offbeatEnabled === 'boolean') offbeatToggle.checked = s.offbeatEnabled;
       if (s.offset !== undefined && s.offset !== null && s.offset !== '') offsetInput.value = s.offset;
       if (typeof s.ownLoop === 'boolean') ownLoopToggle.checked = s.ownLoop;
       if (s.referenceMode === 'youtube') switchMode('youtube');
@@ -1189,14 +1196,17 @@
   detectBpmBtn.addEventListener('click', detectRefBpm);
   bpmInput.addEventListener('change', saveSettings);
 
-  function playMetronomeClick() {
+  function playMetronomeClick(isOffbeat) {
     if (metronomeMuteToggle.checked) return;
     if (!metronomeAudioCtx) metronomeAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
     const ctx = metronomeAudioCtx;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
-    osc.frequency.value = 1000;
-    gain.gain.setValueAtTime(0.4, ctx.currentTime);
+    // The "&" off-beat gets a higher, quieter click so it stays clearly
+    // distinguishable by ear from the main 1/2/3/4 beat.
+    osc.frequency.value = isOffbeat ? 1400 : 1000;
+    const peak = isOffbeat ? 0.22 : 0.4;
+    gain.gain.setValueAtTime(peak, ctx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08);
     osc.connect(gain);
     gain.connect(ctx.destination);
@@ -1209,11 +1219,10 @@
     setTimeout(() => metronomePulse.classList.remove('beat'), 100);
   }
 
-  function updateBeatCountOverlay() {
+  function updateBeatCountOverlay(isOffbeat, beatNumber) {
     const cycle = Math.max(1, Math.floor(Number(beatCountCycleInput.value)) || 8);
-    const idx = lastBeatIndex === null ? 0 : lastBeatIndex;
-    const n = ((idx % cycle) + cycle) % cycle + 1;
-    beatCountNumber.textContent = String(n);
+    const n = ((beatNumber % cycle) + cycle) % cycle + 1;
+    beatCountNumber.textContent = isOffbeat ? '&' : String(n);
     beatCountNumber.classList.add('beat');
     setTimeout(() => beatCountNumber.classList.remove('beat'), 100);
   }
@@ -1222,26 +1231,32 @@
     beatCountOverlay.classList.toggle('hidden', !visible);
   }
 
-  function tickMetronome() {
+  function tickMetronome(isOffbeat, beatNumber) {
     pulseMetronomeBeat();
-    playMetronomeClick();
-    if (beatCountToggle.checked) updateBeatCountOverlay();
+    playMetronomeClick(isOffbeat);
+    if (beatCountToggle.checked) updateBeatCountOverlay(isOffbeat, beatNumber);
   }
 
   // Ticks are derived from the reference video's own playback position (not
   // a free-running JS clock), so the metronome tracks play/pause/seek and
   // stays phase-locked to the "拍の基準位置" set via tapBeat()/manual entry.
+  // When 裏拍(&) is enabled, each beat is split into two steps: the even
+  // step is the main beat (1/2/3/4...), the odd step is the "&" off-beat.
   function pollMetronomeBeat() {
     const bpm = Number(bpmInput.value);
     if (!bpm || bpm <= 0) return;
     const beatInterval = 60 / bpm;
+    const subdivide = offbeatToggle.checked;
+    const stepInterval = subdivide ? beatInterval / 2 : beatInterval;
     const offset = Number(beatOffsetInput.value) || 0;
     const elapsed = refGetCurrentTime() - offset;
     if (elapsed < 0) { lastBeatIndex = null; return; }
-    const beatIndex = Math.floor(elapsed / beatInterval);
-    if (beatIndex !== lastBeatIndex) {
-      lastBeatIndex = beatIndex;
-      tickMetronome();
+    const stepIndex = Math.floor(elapsed / stepInterval);
+    if (stepIndex !== lastBeatIndex) {
+      lastBeatIndex = stepIndex;
+      const isOffbeat = subdivide && (stepIndex % 2 !== 0);
+      const beatNumber = subdivide ? Math.floor(stepIndex / 2) : stepIndex;
+      tickMetronome(isOffbeat, beatNumber);
     }
   }
 
@@ -1277,6 +1292,7 @@
     saveSettings();
   });
   beatCountCycleInput.addEventListener('change', saveSettings);
+  offbeatToggle.addEventListener('change', () => { lastBeatIndex = null; saveSettings(); });
 
   // Tap tempo: the first tap in a sequence sets the beat offset (基準位置).
   // Each following tap measures the interval since the previous tap and
