@@ -1290,6 +1290,10 @@
   }
 
   function startMetronome() {
+    if (!isPro()) {
+      setBpmStatus('メトロノーム機能はProの機能です。アップグレードすると使えるようになります。');
+      return;
+    }
     const bpm = Number(bpmInput.value);
     if (!bpm || bpm <= 0) {
       setBpmStatus('有効なBPMを入力してください。');
@@ -1807,6 +1811,9 @@
     proUpsellRow.classList.toggle('hidden', pro);
     modeOverlayBtn.textContent = '重ねて表示（オーバーレイ）' + (pro ? '' : ' 🔒Pro');
     modeSwipeBtn.textContent = 'スワイプ分割表示' + (pro ? '' : ' 🔒Pro');
+    if (!metronomePoller) {
+      metronomeToggleBtn.textContent = '▶ メトロノーム開始' + (pro ? '' : ' 🔒Pro');
+    }
   }
 
   function showProModal(message) {
