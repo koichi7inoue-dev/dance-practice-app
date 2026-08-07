@@ -161,6 +161,32 @@
     background: var(--accent);
     transform: scale(1.3);
   }
+  .beat-count-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    z-index: 2;
+  }
+  .beat-count-overlay.hidden { display: none; }
+  .beat-count-overlay .beat-count-number {
+    font-size: min(20vw, 96px);
+    font-weight: 800;
+    color: #fff;
+    background: rgba(0, 0, 0, 0.4);
+    border-radius: 50%;
+    width: 1.6em;
+    height: 1.6em;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    text-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
+    transition: transform 0.08s;
+  }
+  .beat-count-overlay .beat-count-number.beat { transform: scale(1.12); }
   .visually-hidden {
     position: absolute;
     width: 1px; height: 1px;
@@ -481,7 +507,16 @@
         </div>
       </div>
     </div>
-    <p class="hint">お手本動画を再生しながら、拍（ビート）に合わせて「タップ」ボタンまたはTキーを押すと、その瞬間の再生位置が基準になり、メトロノームが動画の再生位置に同期して鳴ります。</p>
+    <p class="hint">お手本動画を再生しながら拍に合わせて「タップ」ボタンまたはTキーを押すと、1回目のタップで基準位置が、2回目以降のタップ間隔からBPMが設定されます（2秒以上間隔が空くと1回目からやり直しになります）。メトロノームは動画の再生位置に同期して鳴ります。</p>
+    <div class="toggle-row" style="margin-top: 10px;">
+      <input type="checkbox" id="beat-count-toggle" />
+      <label for="beat-count-toggle" style="margin: 0;">自分の動画に拍カウントを表示する（メトロノーム再生中のみ）</label>
+      <div class="field" style="flex: 0 0 auto; margin-left: 8px;">
+        <label for="beat-count-cycle-input" style="margin: 0;">何拍で1に戻すか</label>
+        <input type="number" id="beat-count-cycle-input" min="1" max="32" step="1" value="8" style="width: 60px; text-align: center;" />
+      </div>
+    </div>
+    <p class="hint">自分の動画（動画B）の上に大きく数字を表示します。「重ねて表示」モードならお手本動画にも重なって見えます。</p>
   </div>
 
   <div class="video-stage" id="video-stage">
@@ -503,6 +538,7 @@
       <video id="own-video" playsinline></video>
       <div id="own-placeholder" class="placeholder">カメラを開始するか、録画リストから読み込んでください</div>
       <div id="rec-indicator" class="rec-indicator hidden"><span class="rec-dot"></span>REC <span id="rec-timer">0:00</span></div>
+      <div id="beat-count-overlay" class="beat-count-overlay hidden"><span id="beat-count-number" class="beat-count-number">1</span></div>
     </div>
   </div>
 
@@ -784,6 +820,10 @@
   const bpmStatus = document.getElementById('bpm-status');
   const beatOffsetInput = document.getElementById('beat-offset-input');
   const tapBeatBtn = document.getElementById('tap-beat-btn');
+  const beatCountToggle = document.getElementById('beat-count-toggle');
+  const beatCountCycleInput = document.getElementById('beat-count-cycle-input');
+  const beatCountOverlay = document.getElementById('beat-count-overlay');
+  const beatCountNumber = document.getElementById('beat-count-number');
   let metronomePoller = null;
   let lastBeatIndex = null;
   let metronomeAudioCtx = null;
@@ -906,7 +946,9 @@
         frameStepTarget,
         bpm: bpmInput.value,
         metronomeMuted: metronomeMuteToggle.checked,
-        beatOffset: beatOffsetInput.value
+        beatOffset: beatOffsetInput.value,
+        beatCountEnabled: beatCountToggle.checked,
+        beatCountCycle: beatCountCycleInput.value
       }));
     } catch (e) {}
   }
@@ -938,6 +980,8 @@
       if (s.bpm !== undefined && s.bpm !== null && s.bpm !== '') bpmInput.value = s.bpm;
       if (typeof s.metronomeMuted === 'boolean') metronomeMuteToggle.checked = s.metronomeMuted;
       if (s.beatOffset !== undefined && s.beatOffset !== null && s.beatOffset !== '') beatOffsetInput.value = s.beatOffset;
+      if (typeof s.beatCountEnabled === 'boolean') beatCountToggle.checked = s.beatCountEnabled;
+      if (s.beatCountCycle !== undefined && s.beatCountCycle !== null && s.beatCountCycle !== '') beatCountCycleInput.value = s.beatCountCycle;
       if (s.offset !== undefined && s.offset !== null && s.offset !== '') offsetInput.value = s.offset;
       if (typeof s.ownLoop === 'boolean') ownLoopToggle.checked = s.ownLoop;
       if (s.referenceMode === 'youtube') switchMode('youtube');
@@ -1165,9 +1209,23 @@
     setTimeout(() => metronomePulse.classList.remove('beat'), 100);
   }
 
+  function updateBeatCountOverlay() {
+    const cycle = Math.max(1, Math.floor(Number(beatCountCycleInput.value)) || 8);
+    const idx = lastBeatIndex === null ? 0 : lastBeatIndex;
+    const n = ((idx % cycle) + cycle) % cycle + 1;
+    beatCountNumber.textContent = String(n);
+    beatCountNumber.classList.add('beat');
+    setTimeout(() => beatCountNumber.classList.remove('beat'), 100);
+  }
+
+  function setBeatCountOverlayVisible(visible) {
+    beatCountOverlay.classList.toggle('hidden', !visible);
+  }
+
   function tickMetronome() {
     pulseMetronomeBeat();
     playMetronomeClick();
+    if (beatCountToggle.checked) updateBeatCountOverlay();
   }
 
   // Ticks are derived from the reference video's own playback position (not
@@ -1197,6 +1255,7 @@
     lastBeatIndex = null;
     metronomePoller = setInterval(pollMetronomeBeat, 30);
     metronomeToggleBtn.textContent = '■ メトロノーム停止';
+    setBeatCountOverlayVisible(beatCountToggle.checked);
   }
 
   function stopMetronome() {
@@ -1205,6 +1264,7 @@
       metronomePoller = null;
     }
     metronomeToggleBtn.textContent = '▶ メトロノーム開始';
+    setBeatCountOverlayVisible(false);
   }
 
   metronomeToggleBtn.addEventListener('click', () => {
@@ -1212,11 +1272,46 @@
   });
   metronomeMuteToggle.addEventListener('change', saveSettings);
 
+  beatCountToggle.addEventListener('change', () => {
+    setBeatCountOverlayVisible(metronomePoller !== null && beatCountToggle.checked);
+    saveSettings();
+  });
+  beatCountCycleInput.addEventListener('change', saveSettings);
+
+  // Tap tempo: the first tap in a sequence sets the beat offset (基準位置).
+  // Each following tap measures the interval since the previous tap and
+  // turns it into a BPM, so "tap, tap" gives both the phase and the tempo.
+  // A pause of more than TAP_RESET_GAP_MS between taps starts a fresh
+  // sequence instead of computing a (meaningless) huge interval.
+  const TAP_RESET_GAP_MS = 2000;
+  const MIN_TAP_INTERVAL_SEC = 0.15; // guards against key-repeat / accidental double taps
+  let lastTapRealTime = 0;
+  let lastTapVideoTime = null;
+
   function tapBeatOffset() {
+    const now = Date.now();
     const t = refGetCurrentTime();
-    beatOffsetInput.value = t.toFixed(2);
+    const isFreshSequence = lastTapVideoTime === null || (now - lastTapRealTime) > TAP_RESET_GAP_MS;
+
+    if (isFreshSequence) {
+      beatOffsetInput.value = t.toFixed(2);
+      lastBeatIndex = null;
+      setBpmStatus(`拍の基準位置を ${t.toFixed(2)} 秒に設定しました。同じテンポでもう一度タップするとBPMを計算します。`);
+      lastTapVideoTime = t;
+      lastTapRealTime = now;
+      saveSettings();
+      return;
+    }
+
+    const interval = t - lastTapVideoTime;
+    if (interval < MIN_TAP_INTERVAL_SEC) return;
+
+    const bpm = Math.round(60 / interval);
+    bpmInput.value = bpm;
     lastBeatIndex = null;
-    setBpmStatus(`拍の基準位置を ${t.toFixed(2)} 秒に設定しました。`);
+    setBpmStatus(`タップ間隔からBPMを ${bpm} に設定しました（基準位置は最初のタップのまま）。さらにタップすると精度が上がります。`);
+    lastTapVideoTime = t;
+    lastTapRealTime = now;
     saveSettings();
   }
   tapBeatBtn.addEventListener('click', tapBeatOffset);
@@ -2101,6 +2196,7 @@
         break;
       case 'KeyT':
         e.preventDefault();
+        if (e.repeat) break;
         tapBeatOffset();
         break;
     }
