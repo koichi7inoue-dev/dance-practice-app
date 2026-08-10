@@ -1437,6 +1437,7 @@
     if (!file) return;
     const url = URL.createObjectURL(file);
     refFileVideo.src = url;
+    refFileVideo.muted = false;
     refPlaceholder.classList.add('hidden');
     setStatus(`お手本動画「${file.name}」を読み込みました。`);
   });
@@ -2356,10 +2357,12 @@
   function loadSampleVideos() {
     if (referenceMode === 'file' && !refFileVideo.src) {
       refFileVideo.src = 'sample-videos/sample-model.mp4';
+      refFileVideo.muted = true;
       refPlaceholder.classList.add('hidden');
     }
     if (recordings.length === 0) {
       addRecording('サンプル_自分の動き.mp4', 'sample-videos/sample-mine.mp4');
+      ownVideo.muted = true;
     }
     setStatus('サンプル動画を読み込みました。自由に操作を試したら、お手本動画や自分の動画を読み込み直して練習できます。');
   }
