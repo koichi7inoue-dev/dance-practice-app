@@ -1471,13 +1471,16 @@
     });
   }
 
-  ytLoadBtn.addEventListener('click', () => {
-    const videoId = extractVideoId(ytUrlInput.value);
-    if (!videoId) { setStatus('有効なYouTube URLまたは動画IDを入力してください。'); return; }
+  function loadYoutubeUrl(rawInput) {
+    const videoId = extractVideoId(rawInput);
+    if (!videoId) { setStatus('有効なYouTube URLまたは動画IDを入力してください。'); return false; }
+    ytUrlInput.value = rawInput;
     switchMode('youtube');
     if (ytApiReady) createYtPlayer(videoId); else pendingYtId = videoId;
     saveSettings();
-  });
+    return true;
+  }
+  ytLoadBtn.addEventListener('click', () => loadYoutubeUrl(ytUrlInput.value));
   ytUrlInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') ytLoadBtn.click(); });
 
   const ytTag = document.createElement('script');
@@ -2372,6 +2375,12 @@
   loadPresets();
   renderPresetList();
   loadSampleVideos();
+
+  // Lets a link like dance-compare.html?yt=<YouTube URL or video ID> open
+  // with that reference video pre-loaded, overriding both the sample video
+  // and any previously saved reference — the URL is the explicit request.
+  const ytParam = new URLSearchParams(location.search).get('yt');
+  if (ytParam) loadYoutubeUrl(ytParam);
 
   renderProUI();
   const initialSessionId = new URLSearchParams(location.search).get('session_id');
