@@ -2379,8 +2379,28 @@
   // Lets a link like dance-compare.html?yt=<YouTube URL or video ID> open
   // with that reference video pre-loaded, overriding both the sample video
   // and any previously saved reference — the URL is the explicit request.
-  const ytParam = new URLSearchParams(location.search).get('yt');
+  const urlParams = new URLSearchParams(location.search);
+  const ytParam = urlParams.get('yt');
   if (ytParam) loadYoutubeUrl(ytParam);
+
+  // Likewise, ?start=&end= (either "m:ss" or plain seconds, matching what
+  // the A/B fields already accept) pre-fills the loop range and makes sure
+  // looping is turned on, since sharing a range implies wanting it to loop.
+  const startParam = urlParams.get('start');
+  const endParam = urlParams.get('end');
+  let loopRangeFromUrl = false;
+  if (startParam !== null && parseTime(startParam) !== null) {
+    startInput.value = startParam;
+    loopRangeFromUrl = true;
+  }
+  if (endParam !== null && parseTime(endParam) !== null) {
+    endInput.value = endParam;
+    loopRangeFromUrl = true;
+  }
+  if (loopRangeFromUrl) {
+    loopToggle.checked = true;
+    saveSettings();
+  }
 
   renderProUI();
   const initialSessionId = new URLSearchParams(location.search).get('session_id');
