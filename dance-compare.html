@@ -783,6 +783,7 @@
 (function () {
   // ---------- state ----------
   let referenceMode = 'file'; // 'file' | 'youtube'
+  let refFileName = ''; // name of the currently loaded reference file, used to scope presets per video
   let ytPlayer = null;
   let ytApiReady = false;
   let pendingYtId = null;
@@ -1052,6 +1053,7 @@
     const hasContent = mode === 'file' ? !!refFileVideo.src : !!ytPlayer;
     refPlaceholder.classList.toggle('hidden', hasContent);
     saveSettings();
+    renderPresetList();
   }
   tabFileBtn.addEventListener('click', () => switchMode('file'));
   tabYoutubeBtn.addEventListener('click', () => switchMode('youtube'));
@@ -1454,8 +1456,10 @@
     const url = URL.createObjectURL(file);
     refFileVideo.src = url;
     refFileVideo.muted = false;
+    refFileName = file.name;
     refPlaceholder.classList.add('hidden');
     setStatus(`お手本動画「${file.name}」を読み込みました。`);
+    renderPresetList();
   });
   refFileVideo.addEventListener('loadedmetadata', () => {
     refFileVideo.playbackRate = parseFloat(refSpeedSelect.value);
@@ -1644,12 +1648,28 @@
     try { localStorage.setItem(PRESETS_KEY, JSON.stringify(presets)); } catch (e) {}
   }
 
+  // Presets are scoped to the reference video they were saved against, so
+  // switching videos shows only the matching set instead of one long mixed
+  // list. YouTube video IDs are stable identifiers; file videos aren't
+  // re-uploaded with their original data, so the file name is the best
+  // available (best-effort) key. Presets saved before this scoping existed
+  // have no videoKey and are treated as shared/common, shown for every video.
+  function getCurrentVideoKey() {
+    if (referenceMode === 'youtube') {
+      const videoId = extractVideoId(ytUrlInput.value);
+      return videoId ? `yt:${videoId}` : null;
+    }
+    return refFileName ? `file:${refFileName}` : null;
+  }
+
   function addPreset(name) {
     presets.push({
       id: Date.now() + Math.random(),
       name,
       mode: referenceMode,
       url: referenceMode === 'youtube' ? ytUrlInput.value : '',
+      fileName: referenceMode === 'file' ? refFileName : '',
+      videoKey: getCurrentVideoKey(),
       start: startInput.value,
       end: endInput.value
     });
@@ -1675,7 +1695,10 @@
       }
     } else {
       switchMode('file');
-      if (!refFileVideo.src) setStatus(`プリセット「${preset.name}」の区間を設定しました。ファイル動画を選び直してください。`);
+      if (!refFileVideo.src) {
+        const hint = preset.fileName ? `「${preset.fileName}」を選び直してください。` : 'ファイル動画を選び直してください。';
+        setStatus(`プリセット「${preset.name}」の区間を設定しました。${hint}`);
+      }
     }
     saveSettings();
     setStatus(`プリセット「${preset.name}」を読み込みました。`);
@@ -1683,8 +1706,17 @@
 
   function renderPresetList() {
     presetList.innerHTML = '';
-    presetEmptyHint.style.display = presets.length === 0 ? '' : 'none';
-    presets.forEach((preset) => {
+    const currentKey = getCurrentVideoKey();
+    const visiblePresets = presets.filter(p => !p.videoKey || p.videoKey === currentKey);
+    if (visiblePresets.length === 0) {
+      presetEmptyHint.textContent = presets.length === 0
+        ? '保存された区間はありません。'
+        : 'この動画用の保存済み区間はありません。';
+      presetEmptyHint.style.display = '';
+    } else {
+      presetEmptyHint.style.display = 'none';
+    }
+    visiblePresets.forEach((preset) => {
       const el = document.createElement('div');
       el.className = 'recording-item';
 
@@ -1696,7 +1728,8 @@
       const rangeEl = document.createElement('div');
       rangeEl.className = 'recording-time';
       const modeLabel = preset.mode === 'youtube' ? 'YouTube' : 'ファイル';
-      rangeEl.textContent = `${preset.start || '0:00'} 〜 ${preset.end || '最後まで'}（${modeLabel}）`;
+      const scopeLabel = preset.videoKey ? '' : '・共通';
+      rangeEl.textContent = `${preset.start || '0:00'} 〜 ${preset.end || '最後まで'}（${modeLabel}${scopeLabel}）`;
       info.appendChild(nameEl);
       info.appendChild(rangeEl);
 
@@ -2377,6 +2410,7 @@
     if (referenceMode === 'file' && !refFileVideo.src) {
       refFileVideo.src = 'sample-videos/sample-model.mp4';
       refFileVideo.muted = true;
+      refFileName = 'sample-model.mp4';
       refPlaceholder.classList.add('hidden');
     }
     if (recordings.length === 0) {
@@ -2389,8 +2423,8 @@
   loadSettings();
   renderRecordingList();
   loadPresets();
-  renderPresetList();
   loadSampleVideos();
+  renderPresetList();
 
   // Lets a link like dance-compare.html?yt=<YouTube URL or video ID> open
   // with that reference video pre-loaded, overriding both the sample video
