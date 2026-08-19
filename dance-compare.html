@@ -958,8 +958,11 @@
   // where sub-second position matters.
   function formatTimePrecise(totalSeconds) {
     totalSeconds = Math.max(0, totalSeconds || 0);
-    const m = Math.floor(totalSeconds / 60);
-    const s = totalSeconds - m * 60;
+    // Round to one decimal before splitting into minutes/seconds, so a value
+    // like 59.96 becomes 1:00.0 instead of rounding s.toFixed(1) up to 0:60.0.
+    const rounded = Math.round(totalSeconds * 10) / 10;
+    const m = Math.floor(rounded / 60);
+    const s = rounded - m * 60;
     return `${m}:${s.toFixed(1).padStart(4, '0')}`;
   }
 
