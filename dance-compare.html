@@ -2402,19 +2402,37 @@
   // Likewise, ?start=&end= (either "m:ss" or plain seconds, matching what
   // the A/B fields already accept) pre-fills the loop range and makes sure
   // looping is turned on, since sharing a range implies wanting it to loop.
+  // Passing the param with an empty value (e.g. ?start=&end=) explicitly
+  // clears any previously saved range instead of being ignored, so a link
+  // without a range can override one left over from a past visit.
   const startParam = urlParams.get('start');
   const endParam = urlParams.get('end');
-  let loopRangeFromUrl = false;
-  if (startParam !== null && parseTime(startParam) !== null) {
-    startInput.value = startParam;
-    loopRangeFromUrl = true;
+  let rangeSetFromUrl = false;
+  let rangeClearedFromUrl = false;
+  if (startParam !== null) {
+    if (parseTime(startParam) !== null) {
+      startInput.value = startParam;
+      rangeSetFromUrl = true;
+    } else if (startParam.trim() === '') {
+      startInput.value = '';
+      rangeClearedFromUrl = true;
+    }
   }
-  if (endParam !== null && parseTime(endParam) !== null) {
-    endInput.value = endParam;
-    loopRangeFromUrl = true;
+  if (endParam !== null) {
+    if (parseTime(endParam) !== null) {
+      endInput.value = endParam;
+      rangeSetFromUrl = true;
+    } else if (endParam.trim() === '') {
+      endInput.value = '';
+      rangeClearedFromUrl = true;
+    }
   }
-  if (loopRangeFromUrl) {
+  if (rangeSetFromUrl) {
     loopToggle.checked = true;
+  } else if (rangeClearedFromUrl) {
+    loopToggle.checked = false;
+  }
+  if (rangeSetFromUrl || rangeClearedFromUrl) {
     saveSettings();
   }
 
