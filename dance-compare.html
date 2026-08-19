@@ -954,6 +954,15 @@
     return `${m}:${String(s).padStart(2, '0')}`;
   }
 
+  // Like formatTime but keeps one decimal place, for displays (seek bars)
+  // where sub-second position matters.
+  function formatTimePrecise(totalSeconds) {
+    totalSeconds = Math.max(0, totalSeconds || 0);
+    const m = Math.floor(totalSeconds / 60);
+    const s = totalSeconds - m * 60;
+    return `${m}:${s.toFixed(1).padStart(4, '0')}`;
+  }
+
   const SETTINGS_KEY = 'dancePracticeCompareSettings';
   function saveSettings() {
     try {
@@ -1520,7 +1529,7 @@
       const refCur = refGetCurrentTime();
       refSeekInput.max = String(refDur || 0);
       refSeekInput.value = String(refCur || 0);
-      refSeekCurrent.textContent = formatTime(refCur);
+      refSeekCurrent.textContent = formatTimePrecise(refCur);
       refSeekDuration.textContent = formatTime(refDur);
     }
     if (!isDraggingOwnSeek) {
@@ -1530,7 +1539,7 @@
       ownSeekInput.max = String(ownDur || 0);
       ownSeekInput.value = String(ownCur || 0);
       ownSeekInput.disabled = !ownPlayable;
-      ownSeekCurrent.textContent = formatTime(ownCur);
+      ownSeekCurrent.textContent = formatTimePrecise(ownCur);
       ownSeekDuration.textContent = formatTime(ownDur);
     }
   }
@@ -1539,7 +1548,7 @@
   refSeekInput.addEventListener('input', () => {
     isDraggingRefSeek = true;
     const t = Number(refSeekInput.value);
-    refSeekCurrent.textContent = formatTime(t);
+    refSeekCurrent.textContent = formatTimePrecise(t);
     safely(() => refSeek(t));
   });
   refSeekInput.addEventListener('change', () => { isDraggingRefSeek = false; });
@@ -1548,7 +1557,7 @@
     if (ownMode !== 'playback') return;
     isDraggingOwnSeek = true;
     const t = Number(ownSeekInput.value);
-    ownSeekCurrent.textContent = formatTime(t);
+    ownSeekCurrent.textContent = formatTimePrecise(t);
     safely(() => { ownVideo.currentTime = t; });
   });
   ownSeekInput.addEventListener('change', () => { isDraggingOwnSeek = false; });
