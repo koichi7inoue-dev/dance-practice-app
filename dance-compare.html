@@ -313,6 +313,10 @@
   }
   .skeleton-canvas.hidden { display: none; }
   #own-video.mirrored + #own-skeleton-canvas { transform: scaleX(-1); }
+  .angle-readout-row { margin-top: 10px; gap: 24px; align-items: baseline; }
+  .angle-readout { display: flex; flex-direction: column; align-items: flex-start; }
+  .angle-readout-label { font-size: 12px; color: var(--muted); }
+  .angle-readout-value { font-size: 24px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
   .placeholder {
     position: absolute;
     inset: 0;
@@ -507,6 +511,46 @@
       <span class="hint" id="skeleton-status" style="margin: 0 0 0 8px;"></span>
     </div>
     <p class="hint">映っている人物の骨格を検出して重ねて表示します。処理は端末内（ブラウザ内）で行われ、動画がサーバーに送信されることはありません。お手本側はファイルの動画のみ対応で、YouTubeモードでは表示できません。初回はモデルの読み込みに少し時間がかかります。</p>
+  </div>
+
+  <div class="panel" id="panel-angle">
+    <p class="section-title">関節角度の比較</p>
+    <div class="row" style="align-items: flex-end;">
+      <div class="field" style="flex: 0 0 auto;">
+        <label for="angle-joint-select">関節</label>
+        <select id="angle-joint-select">
+          <option value="knee">膝</option>
+          <option value="elbow">肘</option>
+          <option value="shoulder">肩</option>
+          <option value="hip">股関節</option>
+          <option value="ankle">足首</option>
+          <option value="wrist">手首</option>
+          <option value="trunk">体幹（左右の傾き）</option>
+        </select>
+      </div>
+      <div class="field" id="angle-side-field" style="flex: 0 0 auto;">
+        <label for="angle-side-select">左右</label>
+        <select id="angle-side-select">
+          <option value="left">左</option>
+          <option value="right">右</option>
+        </select>
+      </div>
+    </div>
+    <div class="row angle-readout-row">
+      <div class="angle-readout">
+        <span class="angle-readout-label">お手本</span>
+        <span class="angle-readout-value" id="ref-angle-value">--°</span>
+      </div>
+      <div class="angle-readout">
+        <span class="angle-readout-label">自分</span>
+        <span class="angle-readout-value" id="own-angle-value">--°</span>
+      </div>
+      <div class="angle-readout">
+        <span class="angle-readout-label">差</span>
+        <span class="angle-readout-value" id="angle-diff-value">--°</span>
+      </div>
+    </div>
+    <p class="hint">「骨格を表示する」をONにしている間、選択した関節の角度をリアルタイムに比較します。人物が検出できないときは「--°」と表示されます。</p>
   </div>
 
   <div class="panel" id="panel-ref-zoom">
@@ -2514,6 +2558,26 @@
   const ytVideoWrapper = document.getElementById('yt-video-wrapper');
   const refCtx = refCanvas.getContext('2d');
   const ownCtx = ownCanvas.getContext('2d');
+  const angleJointSelect = document.getElementById('angle-joint-select');
+  const angleSideSelect = document.getElementById('angle-side-select');
+  const angleSideField = document.getElementById('angle-side-field');
+  const refAngleValue = document.getElementById('ref-angle-value');
+  const ownAngleValue = document.getElementById('own-angle-value');
+  const angleDiffValue = document.getElementById('angle-diff-value');
+
+  // 関節ごとの3点(角度計算)/2点(傾き計算)のランドマーク番号。
+  // claude_dance_project の pose_utils.py と同じ定義・同じランドマーク番号を使用。
+  const ANGLE_JOINTS = {
+    knee: { type: 'angle', points: { left: [23, 25, 27], right: [24, 26, 28] } },
+    elbow: { type: 'angle', points: { left: [11, 13, 15], right: [12, 14, 16] } },
+    shoulder: { type: 'angle', points: { left: [23, 11, 13], right: [24, 12, 14] } },
+    hip: { type: 'angle', points: { left: [11, 23, 25], right: [12, 24, 26] } },
+    ankle: { type: 'angle', points: { left: [25, 27, 31], right: [26, 28, 32] } },
+    wrist: { type: 'angle', points: { left: [13, 15, 19], right: [14, 16, 20] } },
+    trunk: { type: 'tilt', points: { both: [11, 12] } },
+  };
+
+  const latestLandmarks = { own: null, ref: null };
 
   const MODULE_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/vision_bundle.mjs';
   const WASM_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm';
@@ -2622,7 +2686,7 @@
     }
   }
 
-  function makeStep(video, canvas, ctx, getLandmarker) {
+  function makeStep(video, canvas, ctx, getLandmarker, target) {
     let lastTime = -1;
     return function step() {
       const landmarker = getLandmarker();
@@ -2632,25 +2696,97 @@
           lastTime = video.currentTime;
           try {
             const result = landmarker.detectForVideo(video, performance.now());
+            latestLandmarks[target] = (result.landmarks && result.landmarks[0]) || null;
             drawResult(ctx, canvas, video, result);
           } catch (err) {
             console.error('骨格検出中にエラーが発生しました', err);
           }
         }
       } else {
+        latestLandmarks[target] = null;
         clearCanvas(ctx, canvas);
       }
     };
   }
 
-  const stepOwn = makeStep(ownVideo, ownCanvas, ownCtx, () => ownLandmarker);
-  const stepRef = makeStep(refVideo, refCanvas, refCtx, () => (isRefFileModeActive() ? refLandmarker : null));
+  const stepOwn = makeStep(ownVideo, ownCanvas, ownCtx, () => ownLandmarker, 'own');
+  const stepRef = makeStep(refVideo, refCanvas, refCtx, () => (isRefFileModeActive() ? refLandmarker : null), 'ref');
+
+  // pose_utils.py の calc_angle と同じ計算(3点 a-b-c から頂点bの角度を求める)
+  function calcAngle(a, b, c) {
+    const ba = { x: a.x - b.x, y: a.y - b.y };
+    const bc = { x: c.x - b.x, y: c.y - b.y };
+    const dot = ba.x * bc.x + ba.y * bc.y;
+    const normBa = Math.hypot(ba.x, ba.y);
+    const normBc = Math.hypot(bc.x, bc.y);
+    if (normBa === 0 || normBc === 0) return null;
+    const cos = Math.max(-1, Math.min(1, dot / (normBa * normBc)));
+    return Math.acos(cos) * (180 / Math.PI);
+  }
+
+  // pose_utils.py の calc_tilt_angle と同じ計算(2点を結ぶ線の水平に対する傾き)
+  function calcTilt(a, b) {
+    return Math.atan2(b.y - a.y, b.x - a.x) * (180 / Math.PI);
+  }
+
+  function getJointAngle(landmarks, jointKey, side) {
+    if (!landmarks) return null;
+    const def = ANGLE_JOINTS[jointKey];
+    if (!def) return null;
+    if (def.type === 'tilt') {
+      const [i1, i2] = def.points.both;
+      const a = landmarks[i1];
+      const b = landmarks[i2];
+      if (!a || !b) return null;
+      return calcTilt(a, b);
+    }
+    const [i1, i2, i3] = def.points[side];
+    const a = landmarks[i1];
+    const b = landmarks[i2];
+    const c = landmarks[i3];
+    if (!a || !b || !c) return null;
+    return calcAngle(a, b, c);
+  }
+
+  function formatAngle(value) {
+    return value === null || value === undefined || Number.isNaN(value) ? '--°' : `${value.toFixed(1)}°`;
+  }
+
+  function syncAngleSideFieldVisibility() {
+    angleSideField.style.display = angleJointSelect.value === 'trunk' ? 'none' : '';
+  }
+
+  function updateAngleReadout() {
+    if (!skeletonToggle.checked) {
+      refAngleValue.textContent = '--°';
+      ownAngleValue.textContent = '--°';
+      angleDiffValue.textContent = '--°';
+      return;
+    }
+    const joint = angleJointSelect.value;
+    const side = angleSideSelect.value;
+    const refAngle = getJointAngle(latestLandmarks.ref, joint, side);
+    const ownAngle = getJointAngle(latestLandmarks.own, joint, side);
+    refAngleValue.textContent = formatAngle(refAngle);
+    ownAngleValue.textContent = formatAngle(ownAngle);
+    angleDiffValue.textContent = refAngle != null && ownAngle != null
+      ? formatAngle(Math.abs(ownAngle - refAngle))
+      : '--°';
+  }
+
+  syncAngleSideFieldVisibility();
+  angleJointSelect.addEventListener('change', () => {
+    syncAngleSideFieldVisibility();
+    updateAngleReadout();
+  });
+  angleSideSelect.addEventListener('change', updateAngleReadout);
 
   function loop() {
     if (!active) return;
     if (isRefFileModeActive()) ensureRefLandmarker();
     stepOwn();
     stepRef();
+    updateAngleReadout();
     loopHandle = requestAnimationFrame(loop);
   }
 
@@ -2677,6 +2813,9 @@
     clearCanvas(refCtx, refCanvas);
     ownCanvas.classList.add('hidden');
     refCanvas.classList.add('hidden');
+    latestLandmarks.own = null;
+    latestLandmarks.ref = null;
+    updateAngleReadout();
   }
 
   skeletonToggle.addEventListener('change', () => {
