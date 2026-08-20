@@ -303,6 +303,16 @@
   #ref-file-video, #yt-player, #own-video { width: 100%; height: 100%; }
   #ref-file-video, #own-video { object-fit: contain; }
   #own-video.mirrored { transform: scaleX(-1); }
+  .skeleton-canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 2;
+  }
+  .skeleton-canvas.hidden { display: none; }
+  #own-video.mirrored + #own-skeleton-canvas { transform: scaleX(-1); }
   .placeholder {
     position: absolute;
     inset: 0;
@@ -489,6 +499,16 @@
     </div>
   </div>
 
+  <div class="panel" id="panel-skeleton">
+    <p class="section-title">骨格オーバーレイ</p>
+    <div class="toggle-row">
+      <input type="checkbox" id="skeleton-toggle" />
+      <label for="skeleton-toggle" style="margin:0;">骨格を表示する</label>
+      <span class="hint" id="skeleton-status" style="margin: 0 0 0 8px;"></span>
+    </div>
+    <p class="hint">映っている人物の骨格を検出して重ねて表示します。処理は端末内（ブラウザ内）で行われ、動画がサーバーに送信されることはありません。お手本側はファイルの動画のみ対応で、YouTubeモードでは表示できません。初回はモデルの読み込みに少し時間がかかります。</p>
+  </div>
+
   <div class="panel" id="panel-ref-zoom">
     <p class="section-title">お手本のズーム</p>
     <div class="row">
@@ -549,7 +569,10 @@
     <div class="player-container" id="container-ref">
       <div class="grid-overlay" id="grid-overlay-ref"></div>
       <div id="file-video-wrapper" class="ref-video-wrapper">
-        <div class="ref-zoom-inner"><video id="ref-file-video" playsinline controls></video></div>
+        <div class="ref-zoom-inner">
+          <video id="ref-file-video" playsinline controls></video>
+          <canvas id="ref-skeleton-canvas" class="skeleton-canvas hidden"></canvas>
+        </div>
       </div>
       <div id="yt-video-wrapper" class="ref-video-wrapper hidden">
         <div class="ref-zoom-inner"><div id="yt-player"></div></div>
@@ -561,6 +584,7 @@
     <div class="player-container" id="container-own">
       <div class="grid-overlay" id="grid-overlay-own"></div>
       <video id="own-video" playsinline></video>
+      <canvas id="own-skeleton-canvas" class="skeleton-canvas hidden"></canvas>
       <div id="own-placeholder" class="placeholder">カメラを開始するか、録画リストから読み込んでください</div>
       <div id="rec-indicator" class="rec-indicator hidden"><span class="rec-dot"></span>REC <span id="rec-timer">0:00</span></div>
       <div id="beat-count-overlay" class="beat-count-overlay hidden"><span id="beat-count-number" class="beat-count-number">1</span></div>
@@ -2476,6 +2500,194 @@
     verifySession(initialSessionId);
     history.replaceState(null, '', location.pathname + location.hash);
   }
+})();
+</script>
+
+<script type="module">
+(async () => {
+  const skeletonToggle = document.getElementById('skeleton-toggle');
+  const skeletonStatus = document.getElementById('skeleton-status');
+  const refVideo = document.getElementById('ref-file-video');
+  const ownVideo = document.getElementById('own-video');
+  const refCanvas = document.getElementById('ref-skeleton-canvas');
+  const ownCanvas = document.getElementById('own-skeleton-canvas');
+  const ytVideoWrapper = document.getElementById('yt-video-wrapper');
+  const refCtx = refCanvas.getContext('2d');
+  const ownCtx = ownCanvas.getContext('2d');
+
+  const MODULE_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/vision_bundle.mjs';
+  const WASM_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm';
+  const MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task';
+
+  let visionModule = null;
+  let ownLandmarker = null;
+  let refLandmarker = null;
+  let refLoading = false;
+  let loadPromise = null;
+  let active = false;
+  let loopHandle = null;
+
+  function setStatus(text) {
+    if (skeletonStatus) skeletonStatus.textContent = text;
+  }
+
+  async function createLandmarker() {
+    const { FilesetResolver, PoseLandmarker } = visionModule;
+    const vision = await FilesetResolver.forVisionTasks(WASM_URL);
+    try {
+      return await PoseLandmarker.createFromOptions(vision, {
+        baseOptions: { modelAssetPath: MODEL_URL, delegate: 'GPU' },
+        runningMode: 'VIDEO',
+        numPoses: 1,
+      });
+    } catch (err) {
+      console.warn('GPU delegateでの骨格検出モデル初期化に失敗したため、CPUで再試行します', err);
+      return await PoseLandmarker.createFromOptions(vision, {
+        baseOptions: { modelAssetPath: MODEL_URL, delegate: 'CPU' },
+        runningMode: 'VIDEO',
+        numPoses: 1,
+      });
+    }
+  }
+
+  function ensureReady() {
+    if (loadPromise) return loadPromise;
+    loadPromise = (async () => {
+      setStatus('モデルを読み込み中…');
+      visionModule = await import(MODULE_URL);
+      ownLandmarker = await createLandmarker();
+      setStatus('');
+    })().catch((err) => {
+      console.error('骨格検出モデルの読み込みに失敗しました', err);
+      setStatus('骨格検出モデルを読み込めませんでした（通信環境をご確認ください）。');
+      loadPromise = null;
+      throw err;
+    });
+    return loadPromise;
+  }
+
+  async function ensureRefLandmarker() {
+    if (refLandmarker || refLoading || !visionModule) return;
+    refLoading = true;
+    try {
+      refLandmarker = await createLandmarker();
+    } catch (err) {
+      console.error('お手本側の骨格検出モデルの読み込みに失敗しました', err);
+    } finally {
+      refLoading = false;
+    }
+  }
+
+  function isRefFileModeActive() {
+    return ytVideoWrapper.classList.contains('hidden');
+  }
+
+  function clearCanvas(ctx, canvas) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  }
+
+  function resizeCanvasToVideo(canvas, video) {
+    const dpr = window.devicePixelRatio || 1;
+    const w = Math.max(1, Math.round(video.clientWidth * dpr));
+    const h = Math.max(1, Math.round(video.clientHeight * dpr));
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w;
+      canvas.height = h;
+    }
+  }
+
+  function drawResult(ctx, canvas, video, result) {
+    clearCanvas(ctx, canvas);
+    const posesLandmarks = result && result.landmarks ? result.landmarks : [];
+    if (!posesLandmarks.length || !video.videoWidth || !video.videoHeight) return;
+
+    // object-fit: contain によるレターボックス分だけ座標をずらして合わせる
+    const scale = Math.min(canvas.width / video.videoWidth, canvas.height / video.videoHeight);
+    const drawW = video.videoWidth * scale;
+    const drawH = video.videoHeight * scale;
+    const offsetX = (canvas.width - drawW) / 2;
+    const offsetY = (canvas.height - drawH) / 2;
+
+    const { DrawingUtils, PoseLandmarker } = visionModule;
+    const drawingUtils = new DrawingUtils(ctx);
+    for (const landmarks of posesLandmarks) {
+      const mapped = landmarks.map((lm) => ({
+        x: (lm.x * drawW + offsetX) / canvas.width,
+        y: (lm.y * drawH + offsetY) / canvas.height,
+        z: lm.z,
+        visibility: lm.visibility,
+      }));
+      drawingUtils.drawConnectors(mapped, PoseLandmarker.POSE_CONNECTIONS, { color: '#4ade80', lineWidth: 3 });
+      drawingUtils.drawLandmarks(mapped, { color: '#f97316', lineWidth: 1, radius: 3 });
+    }
+  }
+
+  function makeStep(video, canvas, ctx, getLandmarker) {
+    let lastTime = -1;
+    return function step() {
+      const landmarker = getLandmarker();
+      if (landmarker && video.readyState >= 2 && video.videoWidth && !video.seeking) {
+        resizeCanvasToVideo(canvas, video);
+        if (video.currentTime !== lastTime) {
+          lastTime = video.currentTime;
+          try {
+            const result = landmarker.detectForVideo(video, performance.now());
+            drawResult(ctx, canvas, video, result);
+          } catch (err) {
+            console.error('骨格検出中にエラーが発生しました', err);
+          }
+        }
+      } else {
+        clearCanvas(ctx, canvas);
+      }
+    };
+  }
+
+  const stepOwn = makeStep(ownVideo, ownCanvas, ownCtx, () => ownLandmarker);
+  const stepRef = makeStep(refVideo, refCanvas, refCtx, () => (isRefFileModeActive() ? refLandmarker : null));
+
+  function loop() {
+    if (!active) return;
+    if (isRefFileModeActive()) ensureRefLandmarker();
+    stepOwn();
+    stepRef();
+    loopHandle = requestAnimationFrame(loop);
+  }
+
+  async function start() {
+    active = true;
+    ownCanvas.classList.remove('hidden');
+    refCanvas.classList.remove('hidden');
+    try {
+      await ensureReady();
+      if (isRefFileModeActive()) await ensureRefLandmarker();
+    } catch (err) {
+      // ensureReady()が既にskeletonStatusにエラーを表示済み
+    }
+    if (active && !loopHandle) loop();
+  }
+
+  function stop() {
+    active = false;
+    if (loopHandle) {
+      cancelAnimationFrame(loopHandle);
+      loopHandle = null;
+    }
+    clearCanvas(ownCtx, ownCanvas);
+    clearCanvas(refCtx, refCanvas);
+    ownCanvas.classList.add('hidden');
+    refCanvas.classList.add('hidden');
+  }
+
+  skeletonToggle.addEventListener('change', () => {
+    if (skeletonToggle.checked) start();
+    else stop();
+  });
+
+  window.addEventListener('beforeunload', () => {
+    if (ownLandmarker) ownLandmarker.close();
+    if (refLandmarker) refLandmarker.close();
+  });
 })();
 </script>
 </body>
