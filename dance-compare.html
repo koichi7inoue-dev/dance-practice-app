@@ -2374,6 +2374,8 @@
   function syncPlay() {
     safely(() => refPlay());
     safely(() => { if (ownMode === 'playback') ownVideo.play(); });
+    syncSessionActive = true;
+    captureSyncBaseline();
   }
   function syncPause() {
     safely(() => refPause());
@@ -2390,6 +2392,48 @@
     safely(() => refSeek(refTarget));
     safely(() => { if (ownMode === 'playback') ownVideo.currentTime = Math.max(0, ownTarget); });
   }
+
+  // ---------- own/ref playback drift correction ----------
+  // ref-file-video and own-video are two independently-clocked <video>
+  // elements, so even after starting together via syncPlay() they slowly
+  // drift apart during playback. For fast content like dance, even a
+  // fraction of a second of drift shows up as a visibly different pose (this
+  // is what made the joint-angle comparison feature disagree even when the
+  // exact same video file was loaded on both sides). Track the own-minus-ref
+  // time relationship whenever it's deliberately (re)established — sync
+  // play, sync reset, or any manual seek — and pull own back to it if it
+  // drifts too far during otherwise-uninterrupted playback. Scoped to
+  // file-mode reference + own-in-playback, matching other file-only features
+  // in this app (BPM detection, skeleton overlay).
+  let syncSessionActive = false;
+  let syncBaselineDiff = null;
+  const DRIFT_CORRECTION_THRESHOLD_SEC = 0.12;
+
+  function captureSyncBaseline() {
+    if (ownMode !== 'playback' || referenceMode !== 'file') { syncBaselineDiff = null; return; }
+    syncBaselineDiff = ownVideo.currentTime - refFileVideo.currentTime;
+  }
+  refFileVideo.addEventListener('seeked', captureSyncBaseline);
+  ownVideo.addEventListener('seeked', captureSyncBaseline);
+  refFileVideo.addEventListener('pause', () => { syncSessionActive = false; });
+  ownVideo.addEventListener('pause', () => { syncSessionActive = false; });
+
+  setInterval(() => {
+    if (!syncSessionActive || syncBaselineDiff === null) return;
+    if (ownMode !== 'playback' || referenceMode !== 'file') return;
+    if (ownVideo.paused || refFileVideo.paused) return;
+    // Different speeds are a deliberate choice (e.g. practicing in slow
+    // motion against a normal-speed reference); don't fight that divergence.
+    const ownRate = parseFloat(ownSpeedSelect.value);
+    const refRate = parseFloat(refSpeedSelect.value);
+    if (!isNaN(ownRate) && !isNaN(refRate) && Math.abs(ownRate - refRate) > 0.001) return;
+    const expectedOwn = refFileVideo.currentTime + syncBaselineDiff;
+    const drift = ownVideo.currentTime - expectedOwn;
+    if (Math.abs(drift) > DRIFT_CORRECTION_THRESHOLD_SEC) {
+      ownVideo.currentTime = Math.max(0, expectedOwn);
+    }
+  }, 250);
+
   syncPlayBtn.addEventListener('click', syncPlay);
   syncPauseBtn.addEventListener('click', syncPause);
   syncResetBtn.addEventListener('click', syncReset);
